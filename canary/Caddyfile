@@ -1,0 +1,14 @@
+:8080 {
+	encode gzip
+
+	root * /app/public
+
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	handle {
+		rewrite * /index.php
+		php_fastcgi 127.0.0.1:9000
+	}
+}

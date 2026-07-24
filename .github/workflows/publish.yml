@@ -1,0 +1,185 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-packagist
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Tag, release, and publish to Packagist
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: github.repository == 'armature-tech/mcp-analytics-php'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check whether this commit is already released
+        id: existing_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$(git tag --points-at HEAD --list 'v*' | sort -V | tail -1 || true)"
+          echo "head_tag=${tag}" >> "${GITHUB_OUTPUT}"
+          if [[ -n "${tag}" ]] && gh release view "${tag}" >/dev/null 2>&1; then
+            echo "Commit ${GITHUB_SHA} already has GitHub release ${tag}; rechecking Packagist."
+            echo "published=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "published=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          coverage: none
+          tools: composer:v2
+
+      - name: Install and check
+        run: |
+          composer update --no-interaction
+          composer validate --strict
+          composer check
+
+      - name: Resolve next patch version
+        id: version
+        env:
+          EXISTING_TAG: ${{ steps.existing_release.outputs.head_tag }}
+          INITIAL_VERSION: "0.1.0"
+        run: |
+          set -euo pipefail
+          php <<'PHP'
+          <?php
+          $existing = ltrim(trim((string) getenv('EXISTING_TAG')), 'v');
+          if (preg_match('/^\d+\.\d+\.\d+$/', $existing)) {
+              file_put_contents(getenv('GITHUB_OUTPUT'), "next_version={$existing}\n", FILE_APPEND);
+              echo "Reusing release version {$existing}\n";
+              exit(0);
+          }
+          $versions = [];
+          $add = static function (mixed $candidate) use (&$versions): void {
+              if (!is_string($candidate)) {
+                  return;
+              }
+              $normalized = ltrim(trim($candidate), 'v');
+              if (preg_match('/^\d+\.\d+\.\d+$/', $normalized)) {
+                  $versions[] = $normalized;
+              }
+          };
+          $remote = @file_get_contents('https://repo.packagist.org/p2/armature/mcp-analytics.json');
+          if (false !== $remote) {
+              $payload = json_decode($remote, true);
+              foreach ($payload['packages']['armature/mcp-analytics'] ?? [] as $package) {
+                  $add($package['version'] ?? null);
+              }
+          }
+          exec('git tag -l ' . escapeshellarg('v*'), $tags);
+          foreach ($tags as $tag) {
+              $add($tag);
+          }
+          if ([] === $versions) {
+              $next = getenv('INITIAL_VERSION');
+          } else {
+              usort($versions, 'version_compare');
+              [$major, $minor, $patch] = array_map('intval', explode('.', end($versions)));
+              $next = $major.'.'.$minor.'.'.($patch + 1);
+          }
+          file_put_contents(getenv('GITHUB_OUTPUT'), "next_version={$next}\n", FILE_APPEND);
+          echo "Publishing armature/mcp-analytics {$next}\n";
+          PHP
+
+      - name: Build and test exact release archive
+        if: steps.existing_release.outputs.published != 'true'
+        env:
+          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/php-dist"
+          php scripts/run-publish-canary.php \
+            --version="${NEXT_VERSION}" \
+            --output-dir="${RUNNER_TEMP}/php-dist"
+
+      - name: Create annotated release tag
+        if: steps.existing_release.outputs.published != 'true' && steps.existing_release.outputs.head_tag == ''
+        env:
+          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
+        run: |
+          set -euo pipefail
+          git config user.name "mcp-analytics-php-release"
+          git config user.email "mcp-analytics-php-release@users.noreply.github.com"
+          git tag --annotate "v${NEXT_VERSION}" --message "Release v${NEXT_VERSION}"
+          git push origin "v${NEXT_VERSION}"
+
+      - name: Create GitHub release
+        if: steps.existing_release.outputs.published != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
+        run: |
+          set -euo pipefail
+          artifact="$(find "${RUNNER_TEMP}/php-dist" -maxdepth 1 -name '*.zip' -print -quit)"
+          gh release create "v${NEXT_VERSION}" "${artifact}" \
+            --verify-tag \
+            --title "v${NEXT_VERSION}" \
+            --notes "Published armature/mcp-analytics ${NEXT_VERSION} from ${GITHUB_SHA}."
+
+      - name: Create or update Packagist package
+        env:
+          PACKAGIST_USERNAME: ${{ secrets.PACKAGIST_USERNAME }}
+          PACKAGIST_API_TOKEN: ${{ secrets.PACKAGIST_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${PACKAGIST_USERNAME}"
+          test -n "${PACKAGIST_API_TOKEN}"
+          repository='https://github.com/armature-tech/mcp-analytics-php'
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            'https://packagist.org/packages/armature/mcp-analytics.json')"
+          if [[ "${status}" == "404" ]]; then
+            endpoint='https://packagist.org/api/create-package'
+          else
+            endpoint='https://packagist.org/api/update-package'
+          fi
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --header 'User-Agent: armature-mcp-analytics-release/1.0 (+https://github.com/armature-tech/mcp-analytics-php)' \
+            --header "Authorization: Bearer ${PACKAGIST_USERNAME}:${PACKAGIST_API_TOKEN}" \
+            "${endpoint}" \
+            --data "{\"repository\":\"${repository}\"}"
+
+      - name: Verify Packagist and blank install
+        env:
+          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent \
+              'https://repo.packagist.org/p2/armature/mcp-analytics.json' \
+              | php -r '$p=json_decode(stream_get_contents(STDIN), true); $v=getenv("NEXT_VERSION"); foreach ($p["packages"]["armature/mcp-analytics"] ?? [] as $x) { if (ltrim((string) ($x["version"] ?? ""), "v") === $v) exit(0); } exit(1);'
+            then
+              break
+            fi
+            if [[ "${attempt}" == "30" ]]; then
+              echo "Packagist did not expose ${NEXT_VERSION} in time." >&2
+              exit 1
+            fi
+            sleep 10
+          done
+          consumer="${RUNNER_TEMP}/packagist-consumer"
+          mkdir -p "${consumer}"
+          cd "${consumer}"
+          composer init --no-interaction --name=armature/packagist-consumer
+          composer require "armature/mcp-analytics:${NEXT_VERSION}" --no-interaction --prefer-dist
+          php -r 'require "vendor/autoload.php"; if (!class_exists(\Armature\McpAnalytics\Analytics::class)) exit(1);'

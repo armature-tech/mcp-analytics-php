@@ -1,0 +1,9 @@
+{
+  "name": "armature/mcp-analytics-php-example",
+  "description": "Minimal official PHP MCP server instrumented with Armature",
+  "type": "project",
+  "require": {
+    "php": "^8.1",
+    "armature/mcp-analytics": "^0.1"
+  }
+}

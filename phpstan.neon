@@ -1,0 +1,8 @@
+parameters:
+  level: 8
+  paths:
+    - canary/public
+    - src
+    - tests
+  tmpDir: .phpstan-cache
+  treatPhpDocTypesAsCertain: true
