@@ -34,10 +34,14 @@ final class SymfonyIngestEmitter implements EmitterInterface
     }
 
     /**
-     * @param array{schema_version: 1, events: list<array<string, mixed>>} $batch
+     * @param array{schema_version: 1, events: list<array<string, mixed>>, sdk?: array{language: string, version: string}} $batch
      */
     public function emit(array $batch): void
     {
+        // Stamp the SDK identity at the delivery boundary so every batch that
+        // reaches Armature ingest carries it. Version::current() reads the
+        // installed Composer package version — never a hardcoded string.
+        $batch['sdk'] ??= ['language' => 'php', 'version' => Version::current()];
         $attempt = 1;
         while (true) {
             try {

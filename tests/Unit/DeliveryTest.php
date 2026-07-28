@@ -12,6 +12,7 @@ use Armature\McpAnalytics\Delivery\PrivacyQueue;
 use Armature\McpAnalytics\Delivery\SchedulerInterface;
 use Armature\McpAnalytics\Delivery\SymfonyIngestEmitter;
 use Armature\McpAnalytics\DeliveryMode;
+use Armature\McpAnalytics\Version;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -183,6 +184,28 @@ final class DeliveryTest extends TestCase
         $emitter->emit(['schema_version' => 1, 'events' => [self::event('1')]]);
         self::assertSame([100], $delays);
         self::assertSame(2, $client->getRequestsCount());
+    }
+
+    public function testIngestStampsSdkIdentityFromInstalledPackageVersion(): void
+    {
+        $seenBody = null;
+        $client = new MockHttpClient(static function (string $method, string $url, array $options) use (&$seenBody): MockResponse {
+            $seenBody = $options['body'] ?? null;
+
+            return new MockResponse('{"accepted":1,"rejected":[]}', ['http_code' => 200]);
+        });
+        $emitter = new SymfonyIngestEmitter('https://example.test/ingest', 'test-key', client: $client);
+        $emitter->emit(['schema_version' => 1, 'events' => [self::event('1')]]);
+
+        self::assertIsString($seenBody);
+        $decoded = \json_decode($seenBody, true);
+        self::assertSame(
+            ['language' => 'php', 'version' => Version::current()],
+            $decoded['sdk'] ?? null,
+        );
+        // Version::current() reads Composer's installed-package metadata; it
+        // must never be empty and never a hardcoded placeholder.
+        self::assertNotSame('', Version::current());
     }
 
     public function testIngestDoesNotRetryOrdinary4xx(): void
