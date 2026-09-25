@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Built-in secret redaction now catches AWS secret access keys written after
+  their name (`AWS_SECRET_ACCESS_KEY=…`, `aws_secret_access_key = …`,
+  `SecretAccessKey: …`) and replaces them with
+  `[redacted:aws-secret-access-key]`, per the updated shared contract. Only
+  the access key ID was caught before.
+
 ## 0.1.0
 
 - Initial PHP SDK for the official `mcp/sdk` 0.7.x server.

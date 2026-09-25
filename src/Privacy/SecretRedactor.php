@@ -20,6 +20,10 @@ final class SecretRedactor
             'replacement' => '$1$2[redacted:sensitive-kv]',
         ],
         [
+            'pattern' => '~(secret[ _-]?access[ _-]?key["\']?[ \t]*[=:][ \t]*["\']?)[A-Za-z0-9/+]{40,}~i',
+            'replacement' => '$1[redacted:aws-secret-access-key]',
+        ],
+        [
             'pattern' => '~\b(?:AKIA|ASIA|ABIA|ACCA|AGPA|AIDA|AIPA|ANPA|ANVA|AROA)[A-Z0-9]{16}\b~',
             'replacement' => '[redacted:aws-access-key-id]',
         ],
