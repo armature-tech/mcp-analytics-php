@@ -10,6 +10,7 @@ use Armature\McpAnalytics\Adapter\Official\InstrumentedRegistry;
 use Armature\McpAnalytics\Adapter\Official\RequestContextStore;
 use Armature\McpAnalytics\Analytics;
 use Armature\McpAnalytics\Config;
+use Armature\McpAnalytics\Contract\SchemaPlanner;
 use Armature\McpAnalytics\Delivery\EmitterInterface;
 use Armature\McpAnalytics\Recorder;
 use Mcp\Capability\Registry;
@@ -62,6 +63,60 @@ final class OfficialAdapterTest extends TestCase
             ['type' => 'object', 'properties' => ['ok' => ['type' => 'boolean']]],
             $public->outputSchema,
         );
+    }
+
+    public function testAdvertisedToolListDescriptionPointsAtRequestCapabilityWhenEnabled(): void
+    {
+        $emitter = new AdapterEmitter();
+        $builder = Server::builder()->setServerInfo('capability-hint', '1.0.0');
+        // No requestCapability override: the emitter alone gives the config
+        // a delivery path, so Config::requestCapabilityEnabled() is true and
+        // the injected-mode description points agents at request_capability.
+        $instrumentation = Analytics::instrument($builder, new Config(emitter: $emitter));
+        $builder->addTool(
+            static fn (string $city): string => $city,
+            name: 'weather',
+            description: 'Weather lookup',
+            inputSchema: self::schema(['city' => ['type' => 'string']], ['city']),
+        );
+        $builder->build();
+
+        $advertised = $instrumentation->registry()->getTools()->references['weather'];
+        self::assertInstanceOf(Tool::class, $advertised);
+        self::assertSame(
+            'Weather lookup' . SchemaPlanner::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY,
+            $advertised->description,
+        );
+        self::assertStringContainsString('call request_capability', (string) $advertised->description);
+
+        $requestCapabilityTool = $instrumentation->registry()->getTools()->references['request_capability'];
+        self::assertInstanceOf(Tool::class, $requestCapabilityTool);
+        self::assertStringNotContainsString('telemetry', (string) $requestCapabilityTool->description);
+    }
+
+    public function testAdvertisedToolListDescriptionKeepsCurrentHintWhenRequestCapabilityDisabled(): void
+    {
+        $emitter = new AdapterEmitter();
+        $builder = Server::builder()->setServerInfo('capability-hint-disabled', '1.0.0');
+        $instrumentation = Analytics::instrument(
+            $builder,
+            new Config(emitter: $emitter, requestCapability: false),
+        );
+        $builder->addTool(
+            static fn (string $city): string => $city,
+            name: 'weather',
+            description: 'Weather lookup',
+            inputSchema: self::schema(['city' => ['type' => 'string']], ['city']),
+        );
+        $builder->build();
+
+        $advertised = $instrumentation->registry()->getTools()->references['weather'];
+        self::assertInstanceOf(Tool::class, $advertised);
+        self::assertSame(
+            'Weather lookup' . SchemaPlanner::TELEMETRY_DESCRIPTION_HINT,
+            $advertised->description,
+        );
+        self::assertStringNotContainsString('request_capability', (string) $advertised->description);
     }
 
     public function testExplicitDefinitionCustomLoaderAndDiscoveryAreDecorated(): void

@@ -260,6 +260,16 @@ Set `requestCapability: false` to disable it. With the default setting, a
 customer tool of the same name wins. With `requestCapability: true`, a
 collision throws during `build()` so the configuration cannot silently drift.
 
+When `request_capability` is enabled, the telemetry hint appended to every
+injected-mode tool's description also points agents at it, so a tool call
+and a capability request stay one hop apart.
+
+If a tool's own description is already long enough that appending the full
+hint would exceed 1024 UTF-8 bytes, the SDK falls back to appending just the
+telemetry sentence, and to leaving the description untouched entirely if
+even that does not fit; either fallback logs a one-time warning per tool
+and never truncates the description or affects telemetry collection.
+
 ## Existing custom registry, handler, or container
 
 The official builder has setters but no corresponding getters. If the
