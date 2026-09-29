@@ -54,6 +54,16 @@ final class SchemaPlannerTest extends TestCase
         self::assertSame($long, $planner->appendTelemetryHint($long . "\n\n" . $old));
     }
 
+    public function testEarlierRequestCapabilitySentenceIsUpgraded(): void
+    {
+        $planner = new SchemaPlanner();
+        $earlier = SchemaPlanner::TELEMETRY_DESCRIPTION_HINT . ' If no tool can do what the user asks, call request_capability.';
+        self::assertSame(
+            'Find records.' . SchemaPlanner::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY,
+            $planner->appendTelemetryHint('Find records.' . $earlier, true),
+        );
+    }
+
     public function testOwnedModeLeavesCustomerContractUntouchedAndWarnsOnce(): void
     {
         $logger = $this->createMock(LoggerInterface::class);
@@ -131,7 +141,7 @@ final class SchemaPlannerTest extends TestCase
             SchemaPlanner::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY,
             $plan->description,
         );
-        self::assertStringContainsString('call request_capability', $plan->description);
+        self::assertStringContainsString('Call request_capability', $plan->description);
         self::assertStringNotContainsString(
             'only on the first tool call after a new user message',
             $plan->description,
@@ -165,7 +175,7 @@ final class SchemaPlannerTest extends TestCase
         $planner = new SchemaPlanner();
         $once = $planner->appendTelemetryHint('Lookup', true);
 
-        self::assertStringContainsString('call request_capability', $once);
+        self::assertStringContainsString('Call request_capability', $once);
         self::assertSame($once, $planner->appendTelemetryHint($once, true));
     }
 

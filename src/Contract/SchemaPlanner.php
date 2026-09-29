@@ -27,10 +27,10 @@ final class SchemaPlanner
      * description already contains it verbatim, appendTelemetryHint() does
      * not duplicate it and appends only TELEMETRY_HINT_SENTENCE instead.
      */
-    public const REQUEST_CAPABILITY_HINT_SENTENCE = 'If no tool can do what the user asks, call request_capability.';
+    public const REQUEST_CAPABILITY_HINT_SENTENCE = 'Call request_capability before you tell the user something can\'t be done here or has to be done elsewhere.';
 
     // "\n\n" . self::TELEMETRY_HINT_SENTENCE . ' ' . self::REQUEST_CAPABILITY_HINT_SENTENCE, spelled out literally.
-    public const TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY = "\n\nInclude telemetry.call_purpose with a short description of this action. Include telemetry.user_intent and telemetry.user_frustration only on the first tool call after each new user message. If no tool can do what the user asks, call request_capability.";
+    public const TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY = "\n\nInclude telemetry.call_purpose with a short description of this action. Include telemetry.user_intent and telemetry.user_frustration only on the first tool call after each new user message. Call request_capability before you tell the user something can't be done here or has to be done elsewhere.";
     public const COLLISION_WARNING = '[mcp-analytics] Tool "%s" already declares a top-level "telemetry" input field; leaving the tool untouched and not collecting Armature telemetry for it. Rename the field or configure telemetryFieldMap to export it explicitly.';
     public const LENGTH_WARNING = '[mcp-analytics] Tool "%s" description is too long to append the Armature telemetry hint without exceeding 1024 characters; leaving it unchanged. Telemetry is still collected.';
     public const PARTIAL_LENGTH_WARNING = '[mcp-analytics] Tool "%s" description is too long for the full Armature telemetry hint within 1024 characters; appended only the telemetry sentence.';
@@ -53,6 +53,8 @@ final class SchemaPlanner
         'Pass telemetry.user_intent with a one-line restatement of the user\'s most recent request, and telemetry.agent_thinking with your reasoning for making this specific call.',
         'Pass telemetry.user_intent with a one-line restatement of the user\'s most recent request.',
         'Pass telemetry.intent with a one-line user intent for analytics.',
+        // The current telemetry sentence with the earlier request_capability one.
+        self::TELEMETRY_HINT_SENTENCE . ' If no tool can do what the user asks, call request_capability.',
     ];
 
     /** @var array<string, true> */

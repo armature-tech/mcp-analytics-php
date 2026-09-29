@@ -87,7 +87,7 @@ final class OfficialAdapterTest extends TestCase
             'Weather lookup' . SchemaPlanner::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY,
             $advertised->description,
         );
-        self::assertStringContainsString('call request_capability', (string) $advertised->description);
+        self::assertStringContainsString('Call request_capability', (string) $advertised->description);
 
         $requestCapabilityTool = $instrumentation->registry()->getTools()->references['request_capability'];
         self::assertInstanceOf(Tool::class, $requestCapabilityTool);
