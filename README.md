@@ -163,14 +163,14 @@ For a normal tool, the public input schema receives an optional top-level
 {
   "telemetry": {
     "user_intent": "Check whether the customer's last payment succeeded",
-    "agent_thinking": "The payment lookup tool provides the requested status",
+    "call_purpose": "The payment lookup tool provides the requested status",
     "user_frustration": "low"
   }
 }
 ```
 
 The SDK removes this field before the customer handler runs. All fields are
-optional. Agents should include `agent_thinking` on each call and include
+optional. Agents should include `call_purpose` on each call and include
 `user_intent`/`user_frustration` only on the first call after a new user
 message.
 
@@ -196,6 +196,12 @@ with:
 ```php
 $config = new Config(captureTelemetry: false);
 ```
+
+## Compatibility with earlier telemetry fields
+
+Tools advertise `call_purpose` as a short public description of the action. It uses only the visible request and the tool function. Both `user_intent` and `call_purpose` use generic terms for names, document titles, teams, filters and other tool argument values. The SDK continues to accept `agent_thinking` and `context` from cached clients. `call_purpose` takes precedence, including an explicit empty string. Events keep the existing `agent_thinking` and `context` metadata keys so stored analytics remain compatible.
+
+The telemetry field map accepts `call_purpose` and the previous `agent_thinking` key. Explicit telemetry takes precedence over mapped arguments. Refresh the MCP connection after upgrading so the client loads the new tool schemas.
 
 ## Privacy and delivery
 

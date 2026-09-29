@@ -49,7 +49,11 @@ final class Telemetry
         if (null !== $userIntent) {
             $normalized['user_intent'] = $userIntent;
         }
-        $agentThinking = self::firstString($telemetry['agent_thinking'] ?? null, $telemetry['context'] ?? null);
+        $agentThinking = self::firstString(
+            $telemetry['call_purpose'] ?? null,
+            $telemetry['agent_thinking'] ?? null,
+            $telemetry['context'] ?? null,
+        );
         if (null !== $agentThinking) {
             $normalized['agent_thinking'] = $agentThinking;
         }
@@ -78,13 +82,20 @@ final class Telemetry
         }
 
         $merged = $telemetry ?? [];
-        foreach (['user_intent', 'agent_thinking'] as $field) {
-            if (isset($merged[$field]) || !isset($fieldMap[$field])) {
-                continue;
-            }
-            $candidate = $arguments[$fieldMap[$field]] ?? null;
+        if (!isset($merged['user_intent']) && isset($fieldMap['user_intent'])) {
+            $candidate = $arguments[$fieldMap['user_intent']] ?? null;
             if (\is_string($candidate) && '' !== $candidate) {
-                $merged[$field] = $candidate;
+                $merged['user_intent'] = $candidate;
+            }
+        }
+
+        if (!isset($merged['call_purpose']) && !isset($merged['agent_thinking']) && !isset($merged['context'])) {
+            foreach (['call_purpose', 'agent_thinking'] as $field) {
+                $candidate = isset($fieldMap[$field]) ? ($arguments[$fieldMap[$field]] ?? null) : null;
+                if (\is_string($candidate) && '' !== $candidate) {
+                    $merged['agent_thinking'] = $candidate;
+                    break;
+                }
             }
         }
 

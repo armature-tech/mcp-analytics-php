@@ -31,7 +31,27 @@ final class SchemaPlannerTest extends TestCase
         self::assertArrayHasKey('telemetry', $plan->inputSchema['properties']);
         self::assertSame(['city'], $plan->inputSchema['required']);
         self::assertIsString($plan->description);
-        self::assertStringContainsString('telemetry.agent_thinking', $plan->description);
+        self::assertStringContainsString('telemetry.call_purpose', $plan->description);
+    }
+
+    public function testAdvertisedFieldsArePublicAndOptional(): void
+    {
+        $schema = SchemaPlanner::telemetryJsonSchema();
+        self::assertSame(['user_intent', 'call_purpose', 'user_frustration'], \array_keys($schema['properties']));
+        self::assertArrayNotHasKey('required', $schema);
+        self::assertArrayNotHasKey('enum', $schema['properties']['user_frustration']);
+        self::assertStringNotContainsString('reasoning', \json_encode($schema, JSON_THROW_ON_ERROR));
+    }
+
+    public function testOldSdkSuffixIsReplacedAndCustomerProseIsPreserved(): void
+    {
+        $planner = new SchemaPlanner();
+        $old = 'On every call, pass telemetry.agent_thinking with your reasoning for this specific call. Pass telemetry.user_intent only on the first tool call after a new user message.';
+        self::assertSame('Find records.' . SchemaPlanner::TELEMETRY_DESCRIPTION_HINT, $planner->appendTelemetryHint("Find records.\n\n" . $old));
+        $quoted = 'Documentation quotes: "' . $old . '". Keep this text.';
+        self::assertStringStartsWith($quoted, $planner->appendTelemetryHint($quoted));
+        $long = \str_repeat('é', 500);
+        self::assertSame($long, $planner->appendTelemetryHint($long . "\n\n" . $old));
     }
 
     public function testOwnedModeLeavesCustomerContractUntouchedAndWarnsOnce(): void
@@ -154,22 +174,14 @@ final class SchemaPlannerTest extends TestCase
         $planner = new SchemaPlanner();
         $withCurrentHint = $planner->appendTelemetryHint('Lookup', false);
 
-        // A description already carrying any recognized hint (old or new) is
+        // A description already carrying the current hint is
         // returned unchanged, even if request_capability is now enabled.
         self::assertSame($withCurrentHint, $planner->appendTelemetryHint($withCurrentHint, true));
     }
 
     /**
-     * Exercises every branch of the length guard (full hint fits / falls
-     * back to the partial telemetry-sentence-only hint / even the partial
-     * hint does not fit) at its exact byte boundary, for both the current
-     * and the request_capability hint. Byte budgets, with
-     * MAX_TOOL_DESCRIPTION_LENGTH = 1024:
-     * - current hint: 171 bytes -> full boundary at 853/854
-     * - capability hint: 174 bytes -> full boundary at 850/851
-     * - partial hint ("\n\n" + TELEMETRY_HINT_SENTENCE): 111 bytes in both
-     *   modes -> partial boundary at 913/914, regardless of which hint was
-     *   originally being considered.
+     * Length guard: exact full/fallback boundaries use the current hint size.
+     * UTF-8 descriptions use byte counts rather than character counts.
      */
     public function testLengthGuardBoundariesForBothHintVariants(): void
     {
@@ -200,15 +212,20 @@ final class SchemaPlannerTest extends TestCase
      */
     private static function lengthGuardBoundaryCases(): array
     {
+        $limit = SchemaPlanner::MAX_TOOL_DESCRIPTION_LENGTH;
+        $current = $limit - \strlen(SchemaPlanner::TELEMETRY_DESCRIPTION_HINT);
+        $capability = $limit - \strlen(SchemaPlanner::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY);
+        $partial = $limit - \strlen("\n\n" . SchemaPlanner::TELEMETRY_HINT_SENTENCE);
+
         return [
-            'disabled: full hint fits exactly at its boundary' => [false, 853, 'full'],
-            'disabled: full hint one byte over falls back to the partial hint' => [false, 854, 'partial'],
-            'disabled: partial hint fits exactly at its own boundary' => [false, 913, 'partial'],
-            'disabled: partial hint one byte over leaves the description unchanged' => [false, 914, 'none'],
-            'enabled: full hint fits exactly at its boundary' => [true, 850, 'full'],
-            'enabled: full hint one byte over falls back to the partial hint' => [true, 851, 'partial'],
-            'enabled: partial hint fits exactly at its own boundary' => [true, 913, 'partial'],
-            'enabled: partial hint one byte over leaves the description unchanged' => [true, 914, 'none'],
+            'disabled: full boundary' => [false, $current, 'full'],
+            'disabled: one byte over full' => [false, $current + 1, 'none'],
+            'disabled: partial boundary' => [false, $partial, 'full'],
+            'disabled: one byte over partial' => [false, $partial + 1, 'none'],
+            'enabled: full boundary' => [true, $capability, 'full'],
+            'enabled: one byte over full' => [true, $capability + 1, 'partial'],
+            'enabled: partial boundary' => [true, $partial, 'partial'],
+            'enabled: one byte over partial' => [true, $partial + 1, 'none'],
         ];
     }
 
@@ -217,10 +234,10 @@ final class SchemaPlannerTest extends TestCase
         $planner = new SchemaPlanner();
         // One byte past the current hint's full-fit boundary: lands in the
         // step-5 partial-hint branch.
-        $description = \str_repeat('a', 854);
+        $description = \str_repeat('a', SchemaPlanner::MAX_TOOL_DESCRIPTION_LENGTH - \strlen(SchemaPlanner::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY) + 1);
 
-        $once = $planner->appendTelemetryHint($description);
-        $twice = $planner->appendTelemetryHint($once);
+        $once = $planner->appendTelemetryHint($description, true);
+        $twice = $planner->appendTelemetryHint($once, true);
 
         self::assertSame($description . "\n\n" . SchemaPlanner::TELEMETRY_HINT_SENTENCE, $once);
         self::assertSame($once, $twice);
@@ -240,14 +257,13 @@ final class SchemaPlannerTest extends TestCase
                 return true;
             }));
         $planner = new SchemaPlanner($logger);
-        // One byte past the current hint's full-fit boundary (854 bytes):
-        // falls back to the partial telemetry sentence.
-        $description = \str_repeat('a', 854);
+        // One byte past the capability hint's boundary uses the telemetry fallback.
+        $description = \str_repeat('a', SchemaPlanner::MAX_TOOL_DESCRIPTION_LENGTH - \strlen(SchemaPlanner::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY) + 1);
         $partialHint = "\n\n" . SchemaPlanner::TELEMETRY_HINT_SENTENCE;
         $schema = ['type' => 'object', 'properties' => ['city' => ['type' => 'string']]];
 
-        $first = $planner->plan('long', $schema, $description, new Config());
-        $second = $planner->plan('long', $schema, $description, new Config());
+        $first = $planner->plan('long', $schema, $description, new Config(apiKey: 'test-key'));
+        $second = $planner->plan('long', $schema, $description, new Config(apiKey: 'test-key'));
 
         // Idempotent: the second call's description already carries the
         // partial hint's TELEMETRY_HINT_SENTENCE marker, so it is returned
@@ -267,11 +283,12 @@ final class SchemaPlannerTest extends TestCase
         // measures strlen (bytes), not mb_strlen (code points). It still
         // fits the partial-hint budget (913 bytes), so the telemetry
         // sentence alone is appended.
-        $description = \str_repeat('é', 427);
-        self::assertSame(854, \strlen($description));
+        $budget = SchemaPlanner::MAX_TOOL_DESCRIPTION_LENGTH - \strlen(SchemaPlanner::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY);
+        $description = \str_repeat('é', (int) \floor($budget / 2) + 1);
+        self::assertGreaterThan($budget, \strlen($description));
         self::assertLessThan(500, \mb_strlen($description));
 
-        $result = $planner->appendTelemetryHint($description);
+        $result = $planner->appendTelemetryHint($description, true);
 
         self::assertSame($description . "\n\n" . SchemaPlanner::TELEMETRY_HINT_SENTENCE, $result);
     }

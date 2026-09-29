@@ -58,7 +58,7 @@ final class OfficialAdapterTest extends TestCase
         $public = $instrumentation->registry()->getTools()->references['weather'];
         self::assertInstanceOf(Tool::class, $public);
         self::assertArrayHasKey('telemetry', $public->inputSchema['properties']);
-        self::assertStringContainsString('telemetry.agent_thinking', (string) $public->description);
+        self::assertStringContainsString('telemetry.call_purpose', (string) $public->description);
         self::assertSame(
             ['type' => 'object', 'properties' => ['ok' => ['type' => 'boolean']]],
             $public->outputSchema,
@@ -92,6 +92,10 @@ final class OfficialAdapterTest extends TestCase
         $requestCapabilityTool = $instrumentation->registry()->getTools()->references['request_capability'];
         self::assertInstanceOf(Tool::class, $requestCapabilityTool);
         self::assertStringNotContainsString('telemetry', (string) $requestCapabilityTool->description);
+        self::assertSame(
+            'One English sentence describing the missing capability needed for the user\'s task. Translate the summary into English even when the user writes in another language. Describe generic actions and roles. Omit names, contacts, IDs, credentials and all tool argument values.',
+            $requestCapabilityTool->inputSchema['properties']['capability']['description'],
+        );
     }
 
     public function testAdvertisedToolListDescriptionKeepsCurrentHintWhenRequestCapabilityDisabled(): void

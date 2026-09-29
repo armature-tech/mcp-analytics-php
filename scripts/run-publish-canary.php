@@ -392,7 +392,7 @@ foreach (['session-a', 'session-b'] as $session) {
             arguments: ['marker' => $session.'/'.$step['call']],
             telemetry: [
                 ...('call-1' === $step['call'] ? ['user_intent' => $marker] : []),
-                'agent_thinking' => 'exercise the '.$step['status'].' path',
+                'call_purpose' => 'exercise the '.$step['status'].' path',
             ],
             status: $step['status'],
             result: $isError ? null : ['marker' => $session.'/'.$step['call']],

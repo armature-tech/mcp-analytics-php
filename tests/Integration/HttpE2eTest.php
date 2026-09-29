@@ -106,7 +106,7 @@ final class HttpE2eTest extends TestCase
                     'text' => 'hello',
                     'telemetry' => [
                         'user_intent' => 'exercise HTTP',
-                        'agent_thinking' => 'the HTTP call checks request context',
+                        'call_purpose' => 'the HTTP call checks request context',
                     ],
                 ],
             ],

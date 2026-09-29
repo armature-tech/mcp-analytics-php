@@ -21,7 +21,7 @@ final class RecorderTest extends TestCase
 
         $returned = $recorder->instrumentToolCall(
             'weather',
-            ['city' => 'Paris', 'telemetry' => ['user_intent' => 'check weather']],
+            ['city' => 'Paris', 'telemetry' => ['user_intent' => 'check weather', 'call_purpose' => 'Retrieve conditions', 'agent_thinking' => 'old']],
             static function (mixed $arguments) use (&$seen, $result): array {
                 $seen = $arguments;
 
@@ -35,6 +35,9 @@ final class RecorderTest extends TestCase
         self::assertSame($result, $returned);
         $tool = $emitter->event('tool_call');
         self::assertSame('check weather', $tool['metadata']['user_intent']);
+        self::assertSame('Retrieve conditions', $tool['metadata']['agent_thinking']);
+        self::assertSame('Retrieve conditions', $tool['metadata']['context']);
+        self::assertArrayNotHasKey('call_purpose', $tool['metadata']);
         self::assertSame('session', $tool['session_id_hint']);
         self::assertSame(\hash('sha256', $tool['actor_id'] . ' tool_call session#5'), $tool['event_id']);
     }

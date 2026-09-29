@@ -156,7 +156,7 @@ explicit `requestCapability: true` makes a collision a build error.
 Run the project's formatting, static analysis, and tests. Then verify:
 
 1. a real `tools/list` response contains optional
-   `telemetry.agent_thinking` on an injected tool;
+   `telemetry.call_purpose` on an injected tool;
 2. a real `tools/call` sends telemetry but the PHP handler receives only its
    original parameters;
 3. a mock emitter receives one `session_init` and one `tool_call`;

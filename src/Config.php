@@ -19,6 +19,7 @@ use Psr\Log\LoggerInterface;
  * @phpstan-type RedactableEvent array<string, mixed>
  * @phpstan-type TelemetryFieldMap array{
  *   user_intent?: string,
+ *   call_purpose?: string,
  *   agent_thinking?: string,
  *   user_frustration?: string
  * }
@@ -61,7 +62,7 @@ final class Config
             throw new \InvalidArgumentException('Deferred delivery requires a scheduler.');
         }
         foreach ($this->telemetryFieldMap as $field => $argument) {
-            if (!\in_array($field, ['user_intent', 'agent_thinking', 'user_frustration'], true)) {
+            if (!\in_array($field, ['user_intent', 'call_purpose', 'agent_thinking', 'user_frustration'], true)) {
                 throw new \InvalidArgumentException(\sprintf('Unknown telemetry field map key "%s".', $field));
             }
             if ('' === \trim($argument)) {

@@ -38,6 +38,12 @@ final class ConfigTest extends TestCase
         self::assertTrue((new Config(apiKey: 'test-key', requestCapability: true))->requestCapabilityExplicit());
     }
 
+    public function testFieldMapAcceptsPublicAndLegacyPurposeKeys(): void
+    {
+        $map = ['call_purpose' => 'action', 'agent_thinking' => 'legacy'];
+        self::assertSame($map, (new Config(telemetryFieldMap: $map))->telemetryFieldMap);
+    }
+
     public function testFieldMapRejectsUnknownKeys(): void
     {
         $this->expectException(\InvalidArgumentException::class);

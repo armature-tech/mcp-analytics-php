@@ -59,7 +59,7 @@ final class StdioE2eTest extends TestCase
                         'text' => 'hello',
                         'telemetry' => [
                             'user_intent' => 'test the PHP SDK',
-                            'agent_thinking' => 'the echo tool verifies execution',
+                            'call_purpose' => 'the echo tool verifies execution',
                         ],
                     ],
                 ],

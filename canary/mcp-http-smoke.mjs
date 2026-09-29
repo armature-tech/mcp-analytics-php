@@ -51,7 +51,7 @@ async function conversation(label) {
   for (const tool of listed.result.tools) assert.ok(tool.inputSchema.properties.telemetry, `${tool.name} lacks telemetry`);
   const identity = await rpc("tools/call", {
     name: "canary_identity",
-    arguments: { telemetry: { user_intent: intent, agent_thinking: "obtain the session identity" } },
+    arguments: { telemetry: { user_intent: intent, call_purpose: "obtain the session identity" } },
   });
   assert.ok(identity?.result?.content?.[0]?.text, `${label}: canary_identity failed: ${JSON.stringify(identity)}`);
   const identityValue = JSON.parse(identity.result.content[0].text);
@@ -59,7 +59,7 @@ async function conversation(label) {
   assert.equal(identityValue.deployment, deployment);
   const echoed = await rpc("tools/call", {
     name: "canary_echo",
-    arguments: { marker: sessionId, telemetry: { agent_thinking: "verify the session identity is stable" } },
+    arguments: { marker: sessionId, telemetry: { call_purpose: "verify the session identity is stable" } },
   });
   assert.ok(echoed?.result?.content?.[0]?.text, `${label}: canary_echo failed: ${JSON.stringify(echoed)}`);
   const echoValue = JSON.parse(echoed.result.content[0].text);

@@ -10,6 +10,27 @@ use PHPUnit\Framework\TestCase;
 
 final class TelemetryTest extends TestCase
 {
+    public function testCallPurposePrecedesCachedAliasesIncludingEmptyString(): void
+    {
+        foreach (['Action summary', '', 123] as $value) {
+            $result = Telemetry::extract([
+                'query' => 'x',
+                'telemetry' => ['call_purpose' => $value, 'agent_thinking' => 'old', 'context' => 'older'],
+            ]);
+            self::assertSame(['query' => 'x'], $result['arguments']);
+            self::assertSame(['agent_thinking' => \is_string($value) ? $value : 'old'], $result['telemetry']);
+        }
+    }
+
+    public function testCallPurposeFieldMapKeepsExplicitValuesAndCustomerArguments(): void
+    {
+        $arguments = ['action' => 'Retrieve records', 'old' => 'Legacy value'];
+        $map = ['call_purpose' => 'action', 'agent_thinking' => 'old'];
+        self::assertSame(['agent_thinking' => 'Retrieve records'], Telemetry::applyFieldMap(null, $arguments, $map));
+        self::assertSame(['call_purpose' => ''], Telemetry::applyFieldMap(['call_purpose' => ''], $arguments, $map));
+        self::assertSame('Retrieve records', $arguments['action']);
+    }
+
     public function testCanonicalExtractionVectors(): void
     {
         $decoded = \json_decode(
