@@ -33,6 +33,7 @@ use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Uid\Uuid;
 
@@ -63,6 +64,32 @@ final class OfficialAdapterTest extends TestCase
             ['type' => 'object', 'properties' => ['ok' => ['type' => 'boolean']]],
             $public->outputSchema,
         );
+    }
+
+    public function testConfiguredDescriptionLengthLogLevelReachesTheRegistry(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects(self::once())
+            ->method('info')
+            ->with(self::stringContains('Tool "long_tool" description is too long'));
+        $logger->expects(self::never())->method('warning');
+        $builder = Server::builder()->setServerInfo('length-log-level', '1.0.0');
+        $instrumentation = Analytics::instrument($builder, new Config(
+            emitter: new AdapterEmitter(),
+            logger: $logger,
+            descriptionLengthLogLevel: 'info',
+        ));
+        $builder->addTool(
+            static fn (string $city): string => $city,
+            name: 'long_tool',
+            description: \str_repeat('a', 800),
+            inputSchema: self::schema(['city' => ['type' => 'string']], ['city']),
+        );
+        $builder->build();
+
+        $advertised = $instrumentation->registry()->getTools()->references['long_tool'];
+        self::assertInstanceOf(Tool::class, $advertised);
+        self::assertSame(\str_repeat('a', 800) . "\n\n" . SchemaPlanner::TELEMETRY_HINT_SENTENCE, $advertised->description);
     }
 
     public function testAdvertisedToolListDescriptionPointsAtRequestCapabilityWhenEnabled(): void

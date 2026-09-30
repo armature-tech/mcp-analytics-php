@@ -20,6 +20,15 @@ final class ConfigTest extends TestCase
         self::assertTrue($config->redactSecrets);
         self::assertFalse($config->hasDeliveryPath());
         self::assertFalse($config->requestCapabilityEnabled());
+        self::assertSame('warning', $config->descriptionLengthLogLevel);
+    }
+
+    public function testDescriptionLengthLogLevelRejectsUnknownLevels(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('descriptionLengthLogLevel must be one of none, debug, info, warning.');
+
+        new Config(descriptionLengthLogLevel: 'error');
     }
 
     public function testDeferredDeliveryRequiresScheduler(): void

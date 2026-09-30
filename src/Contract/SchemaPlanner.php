@@ -7,6 +7,7 @@ namespace Armature\McpAnalytics\Contract;
 use Armature\McpAnalytics\Config;
 use Armature\McpAnalytics\TelemetryMode;
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 
 final class SchemaPlanner
 {
@@ -69,9 +70,8 @@ final class SchemaPlanner
      */
     private array $lengthWarned = [];
 
-    public function __construct(
-        private readonly ?LoggerInterface $logger = null,
-    ) {
+    public function __construct(private readonly ?LoggerInterface $logger = null)
+    {
     }
 
     /**
@@ -112,7 +112,12 @@ final class SchemaPlanner
         return new ToolTelemetryPlan(
             TelemetryMode::Injected,
             $decorated,
-            $this->appendTelemetryHint($description, $config->requestCapabilityEnabled(), $toolName),
+            $this->appendTelemetryHint(
+                $description,
+                $config->requestCapabilityEnabled(),
+                $toolName,
+                $config->descriptionLengthLogLevel,
+            ),
         );
     }
 
@@ -149,13 +154,16 @@ final class SchemaPlanner
      * Measure the description in UTF-8 bytes. If the full hint does not fit,
      * append the complete telemetry hint without request_capability. If that
      * also exceeds the limit, keep the customer description. Never cut a
-     * sentence. Log at most one length warning per tool name. The telemetry
-     * schema is injected separately in plan() regardless of available room.
+     * sentence. Log at most one length warning per tool name, at $logLevel
+     * (one of Config::DESCRIPTION_LENGTH_LOG_LEVELS; plan() passes the
+     * config's). The telemetry schema is injected separately in plan()
+     * regardless of available room.
      */
     public function appendTelemetryHint(
         ?string $description,
         bool $requestCapabilityEnabled = false,
         ?string $toolName = null,
+        string $logLevel = LogLevel::WARNING,
     ): string {
         $hint = $requestCapabilityEnabled
             ? self::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY
@@ -203,12 +211,12 @@ final class SchemaPlanner
         }
 
         if (\strlen($description . $partial) <= self::MAX_TOOL_DESCRIPTION_LENGTH) {
-            $this->warnLengthOnce($toolName, self::PARTIAL_LENGTH_WARNING);
+            $this->warnLengthOnce($toolName, self::PARTIAL_LENGTH_WARNING, $logLevel);
 
             return $description . $partial;
         }
 
-        $this->warnLengthOnce($toolName, self::LENGTH_WARNING);
+        $this->warnLengthOnce($toolName, self::LENGTH_WARNING, $logLevel);
 
         return $description;
     }
@@ -238,17 +246,30 @@ final class SchemaPlanner
         return $schema;
     }
 
-    private function warnLengthOnce(?string $toolName, string $messageTemplate): void
+    private function warnLengthOnce(?string $toolName, string $messageTemplate, string $logLevel): void
     {
-        if (null === $toolName || isset($this->lengthWarned[$toolName])) {
+        if (null === $toolName || 'none' === $logLevel || isset($this->lengthWarned[$toolName])) {
             return;
         }
         $this->lengthWarned[$toolName] = true;
         $message = \sprintf($messageTemplate, $toolName);
-        if (null !== $this->logger) {
-            $this->logger->warning($message);
-        } else {
-            \error_log($message);
+        // Without a logger, only warnings reach the PHP error log, which has
+        // no levels; debug and info need a PSR-3 logger to be seen.
+        switch ($logLevel) {
+            case LogLevel::DEBUG:
+                $this->logger?->debug($message);
+
+                return;
+            case LogLevel::INFO:
+                $this->logger?->info($message);
+
+                return;
+            default:
+                if (null !== $this->logger) {
+                    $this->logger->warning($message);
+                } else {
+                    \error_log($message);
+                }
         }
     }
 

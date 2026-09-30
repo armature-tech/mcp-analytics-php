@@ -276,6 +276,14 @@ telemetry sentence, and to leaving the description untouched entirely if
 even that does not fit; either fallback logs a one-time warning per tool
 and never truncates the description or affects telemetry collection.
 
+Set `descriptionLengthLogLevel` to `'debug'`, `'info'` or `'none'` to log
+that notice at a lower level, or not at all (default `'warning'`). Without a
+PSR-3 logger, only warnings reach the PHP error log.
+
+```php
+new Config(apiKey: $key, logger: $logger, descriptionLengthLogLevel: 'info');
+```
+
 ## Existing custom registry, handler, or container
 
 The official builder has setters but no corresponding getters. If the

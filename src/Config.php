@@ -7,6 +7,7 @@ namespace Armature\McpAnalytics;
 use Armature\McpAnalytics\Delivery\EmitterInterface;
 use Armature\McpAnalytics\Delivery\SchedulerInterface;
 use Psr\Log\LoggerInterface;
+use Psr\Log\LogLevel;
 
 /**
  * @phpstan-type ActorContext array{
@@ -27,6 +28,8 @@ use Psr\Log\LoggerInterface;
 final class Config
 {
     public const DEFAULT_ENDPOINT_URL = 'https://app.armature.tech/api/mcp-analytics/ingest';
+
+    public const DESCRIPTION_LENGTH_LOG_LEVELS = ['none', LogLevel::DEBUG, LogLevel::INFO, LogLevel::WARNING];
 
     /**
      * @param string|callable(ActorContext): string|null            $actorId
@@ -54,9 +57,17 @@ final class Config
         public readonly array $telemetryFieldMap = [],
         public readonly ?bool $requestCapability = null,
         public readonly ?LoggerInterface $logger = null,
+        /**
+         * Level of the one-time notice for a tool description too long for
+         * the full telemetry hint: 'none', 'debug', 'info' or 'warning'.
+         */
+        public readonly string $descriptionLengthLogLevel = LogLevel::WARNING,
     ) {
         if ($this->timeoutMs < 1) {
             throw new \InvalidArgumentException('timeoutMs must be at least 1.');
+        }
+        if (!\in_array($this->descriptionLengthLogLevel, self::DESCRIPTION_LENGTH_LOG_LEVELS, true)) {
+            throw new \InvalidArgumentException(\sprintf('descriptionLengthLogLevel must be one of %s.', \implode(', ', self::DESCRIPTION_LENGTH_LOG_LEVELS)));
         }
         if (DeliveryMode::Deferred === $this->delivery && null === $this->scheduler) {
             throw new \InvalidArgumentException('Deferred delivery requires a scheduler.');

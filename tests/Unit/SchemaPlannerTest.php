@@ -253,6 +253,49 @@ final class SchemaPlannerTest extends TestCase
         self::assertSame($once, $twice);
     }
 
+    public function testDescriptionLengthNoticeFollowsTheConfiguredLevel(): void
+    {
+        $description = \str_repeat('a', SchemaPlanner::MAX_TOOL_DESCRIPTION_LENGTH - \strlen(SchemaPlanner::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY) + 1);
+        $message = '[mcp-analytics] Tool "long" description is too long for the full Armature telemetry hint within 1024 characters; appended only the telemetry sentence.';
+        foreach (['debug', 'info'] as $level) {
+            $logger = $this->createMock(LoggerInterface::class);
+            $logger->expects(self::once())->method($level)->with($message);
+            $logger->expects(self::never())->method('warning');
+            $planner = new SchemaPlanner($logger);
+            $planner->appendTelemetryHint($description, true, 'long', $level);
+            $planner->appendTelemetryHint($description, true, 'long', $level);
+        }
+
+        $silent = $this->createMock(LoggerInterface::class);
+        foreach (['debug', 'info', 'warning', 'log'] as $method) {
+            $silent->expects(self::never())->method($method);
+        }
+        $planner = new SchemaPlanner($silent);
+        self::assertSame(
+            $description . "\n\n" . SchemaPlanner::TELEMETRY_HINT_SENTENCE,
+            $planner->appendTelemetryHint($description, true, 'long', 'none'),
+        );
+        self::assertSame(\str_repeat('b', 1000), $planner->appendTelemetryHint(\str_repeat('b', 1000), true, 'verbose', 'none'));
+    }
+
+    public function testPlanUsesTheConfiguredDescriptionLengthLogLevel(): void
+    {
+        $schema = ['type' => 'object', 'properties' => []];
+        $long = \str_repeat('a', 1000);
+        foreach (['debug', 'info', 'warning'] as $level) {
+            $logger = $this->createMock(LoggerInterface::class);
+            $logger->expects(self::once())->method($level)->with(self::stringContains('"lookup"'));
+            (new SchemaPlanner($logger))->plan('lookup', $schema, $long, new Config(descriptionLengthLogLevel: $level));
+        }
+
+        $silent = $this->createMock(LoggerInterface::class);
+        foreach (['debug', 'info', 'warning', 'log'] as $method) {
+            $silent->expects(self::never())->method($method);
+        }
+        $plan = (new SchemaPlanner($silent))->plan('lookup', $schema, $long, new Config(descriptionLengthLogLevel: 'none'));
+        self::assertSame($long, $plan->description);
+    }
+
     public function testFullHintOneByteOverBoundaryWarnsPartialOncePerTool(): void
     {
         $logger = $this->createMock(LoggerInterface::class);
