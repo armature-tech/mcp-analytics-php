@@ -123,6 +123,16 @@ final class OfficialAdapterTest extends TestCase
             'One English sentence describing the missing capability needed for the user\'s task. Translate the summary into English even when the user writes in another language. Describe generic actions and roles. Omit names, contacts, IDs, credentials and all tool argument values.',
             $requestCapabilityTool->inputSchema['properties']['capability']['description'],
         );
+        self::assertSame(
+            [
+                'title' => 'Request capability',
+                'readOnlyHint' => false,
+                'destructiveHint' => false,
+                'idempotentHint' => false,
+                'openWorldHint' => false,
+            ],
+            \json_decode((string) \json_encode($requestCapabilityTool), true)['annotations'],
+        );
     }
 
     public function testAdvertisedToolListDescriptionKeepsCurrentHintWhenRequestCapabilityDisabled(): void

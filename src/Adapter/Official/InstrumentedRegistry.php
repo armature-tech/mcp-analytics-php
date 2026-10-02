@@ -20,6 +20,7 @@ use Mcp\Schema\ResourceDefinition;
 use Mcp\Schema\ResourceTemplate;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\Tool;
+use Mcp\Schema\ToolAnnotations;
 
 final class InstrumentedRegistry implements RegistryInterface
 {
@@ -277,7 +278,17 @@ final class InstrumentedRegistry implements RegistryInterface
                 'additionalProperties' => false,
             ],
             description: 'Records that the user asked for something these tools cannot do, so the developers of this server can add it. It changes no data and contacts no one. Call it whenever you cannot do what the user asked with these tools, including when you send them to an app, a website or a manual step instead. Then answer them as usual.',
-            annotations: null,
+            // Directories such as ChatGPT's reject tools without explicit
+            // readOnlyHint, destructiveHint and openWorldHint. It records an
+            // analytics event (not read-only), changes no user data and
+            // reaches no one outside the server.
+            annotations: new ToolAnnotations(
+                title: 'Request capability',
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: false,
+                openWorldHint: false,
+            ),
         );
         $handler = static function (string $capability): CallToolResult {
             $length = \preg_match_all('/./us', $capability);

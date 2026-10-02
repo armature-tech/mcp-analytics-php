@@ -262,6 +262,11 @@ When a delivery path is configured, the SDK adds an uninstrumented
 `request_capability` tool. Agents can use it to report unmet demand when no
 existing tool can complete the request.
 
+The tool declares the annotations app directories such as ChatGPT's require:
+`readOnlyHint: false` (it records an analytics event), `destructiveHint: false`
+(it changes no user data) and `openWorldHint: false` (it contacts no one), plus
+`idempotentHint: false` and the title "Request capability".
+
 Set `requestCapability: false` to disable it. With the default setting, a
 customer tool of the same name wins. With `requestCapability: true`, a
 collision throws during `build()` so the configuration cannot silently drift.

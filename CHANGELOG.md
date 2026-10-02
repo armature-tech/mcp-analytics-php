@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `request_capability` now declares tool annotations: `readOnlyHint: false`, `destructiveHint: false`, `idempotentHint: false`, `openWorldHint: false` and the title "Request capability". The ChatGPT app directory holds an app update when a tool lacks explicit `readOnlyHint`, `destructiveHint` and `openWorldHint`.
 - Add `descriptionLengthLogLevel` (`none`, `debug`, `info` or `warning`, default `warning`) to set the level of the one-time notice for a tool description too long for the full telemetry hint. Without a PSR-3 logger, only warnings reach the PHP error log.
 - Word `request_capability` so agents call it. Its description now says it records the request, changes no data and contacts no one, and applies when the agent sends the user to an app, a website or a manual step. The hint's last sentence is now "Call request_capability before you tell the user something can't be done here or has to be done elsewhere." A description ending with the previous sentence is upgraded. The full hint is 45 bytes longer (299). In Claude Code, against tools that send users to their app, Sonnet 5 called it for 38 of 42 unsupported requests, up from 16, and never on supported ones.
 - Advertise optional `call_purpose` using the visible task and tool action. Keep `user_intent` and `user_frustration` on the first call after each user message.
