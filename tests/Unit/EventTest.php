@@ -146,7 +146,9 @@ final class EventTest extends TestCase
         self::assertTrue(\mb_check_encoding($event['script_source'], 'UTF-8'));
         self::assertSame('get weather', $event['metadata']['intent']);
         self::assertSame('call tool', $event['metadata']['context']);
-        self::assertSame('low', $event['metadata']['frustration_level']);
+        self::assertArrayNotHasKey('user_frustration', $event['metadata']);
+        self::assertArrayNotHasKey('frustration_level', $event['metadata']);
+        self::assertStringNotContainsString('frustration', \json_encode($event, JSON_THROW_ON_ERROR));
         self::assertTrue($event['is_workflow']);
     }
 

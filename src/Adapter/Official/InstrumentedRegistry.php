@@ -6,6 +6,7 @@ namespace Armature\McpAnalytics\Adapter\Official;
 
 use Armature\McpAnalytics\Config;
 use Armature\McpAnalytics\Contract\SchemaPlanner;
+use Armature\McpAnalytics\Contract\SendFeedback;
 use Armature\McpAnalytics\Recorder;
 use Armature\McpAnalytics\TelemetryMode;
 use Mcp\Capability\Registry\PromptReference;
@@ -24,6 +25,8 @@ use Mcp\Schema\ToolAnnotations;
 
 final class InstrumentedRegistry implements RegistryInterface
 {
+    private const RESERVED_NAME_MESSAGE = 'Tool name "send_feedback" is reserved while sendFeedback is explicitly enabled.';
+
     /** @var array<string, Tool> */
     private array $publicTools = [];
 
@@ -36,7 +39,7 @@ final class InstrumentedRegistry implements RegistryInterface
     /** @var array<int, true> */
     private array $capabilityReferenceIds = [];
 
-    private bool $requestCapabilityPending = false;
+    private bool $sendFeedbackPending = false;
     private readonly SchemaPlanner $schemaPlanner;
 
     public function __construct(
@@ -52,13 +55,14 @@ final class InstrumentedRegistry implements RegistryInterface
     public function registerTool(Tool $tool, callable|array|string $handler): ToolReference
     {
         if (
-            'request_capability' === $tool->name
+            SendFeedback::TOOL_NAME === $tool->name
             && isset($this->publicTools[$tool->name])
             && $this->isCurrentCapabilityTool($tool->name)
         ) {
-            if ($this->config->requestCapabilityExplicit()) {
-                throw new \LogicException('Tool name "request_capability" is reserved while requestCapability is explicitly enabled.');
+            if ($this->config->sendFeedbackExplicit()) {
+                throw new \LogicException(self::RESERVED_NAME_MESSAGE);
             }
+            // On by default only: the customer's tool replaces the SDK's.
             $current = $this->inner->getTool($tool->name);
             unset($this->capabilityReferenceIds[\spl_object_id($current)]);
         }
@@ -159,14 +163,14 @@ final class InstrumentedRegistry implements RegistryInterface
 
     public function hasTools(): bool
     {
-        $this->ensureRequestCapability();
+        $this->ensureSendFeedback();
 
         return $this->inner->hasTools();
     }
 
     public function getTools(?int $limit = null, ?string $cursor = null): Page
     {
-        $this->ensureRequestCapability();
+        $this->ensureSendFeedback();
         $page = $this->inner->getTools($limit, $cursor);
         $tools = [];
         foreach ($page->references as $key => $item) {
@@ -180,7 +184,7 @@ final class InstrumentedRegistry implements RegistryInterface
 
     public function getTool(string $name): ToolReference
     {
-        $this->ensureRequestCapability();
+        $this->ensureSendFeedback();
 
         return $this->inner->getTool($name);
     }
@@ -239,68 +243,68 @@ final class InstrumentedRegistry implements RegistryInterface
             ?? TelemetryMode::Injected;
     }
 
-    public function registerRequestCapability(): void
+    /**
+     * Queue the SDK-owned send_feedback tool. It is on by default whenever a
+     * delivery path is configured and off with sendFeedback: false. On by
+     * default, a customer tool already named send_feedback wins; explicitly
+     * enabled, that collision throws. No other tool's description mentions
+     * it.
+     */
+    public function registerSendFeedback(): void
     {
-        if (!$this->config->requestCapabilityEnabled()) {
+        if (!$this->config->sendFeedbackEnabled()) {
             return;
         }
-        $this->requestCapabilityPending = true;
+        $this->sendFeedbackPending = true;
     }
 
-    private function ensureRequestCapability(): void
+    /**
+     * @deprecated Use registerSendFeedback()
+     */
+    public function registerRequestCapability(): void
     {
-        if (!$this->requestCapabilityPending) {
+        $this->registerSendFeedback();
+    }
+
+    private function ensureSendFeedback(): void
+    {
+        if (!$this->sendFeedbackPending) {
             return;
         }
-        $this->requestCapabilityPending = false;
-        if ($this->inner->hasTool('request_capability')) {
-            if ($this->config->requestCapabilityExplicit()) {
-                throw new \LogicException('Tool name "request_capability" is reserved while requestCapability is explicitly enabled.');
+        if ($this->inner->hasTool(SendFeedback::TOOL_NAME)) {
+            if ($this->config->sendFeedbackExplicit()) {
+                // Stay pending so every later lookup reports the collision too.
+                throw new \LogicException(self::RESERVED_NAME_MESSAGE);
             }
+            $this->sendFeedbackPending = false;
 
             return;
         }
+        $this->sendFeedbackPending = false;
 
+        $annotations = SendFeedback::annotations();
         $tool = new Tool(
-            name: 'request_capability',
+            name: SendFeedback::TOOL_NAME,
             title: null,
-            inputSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'capability' => [
-                        'type' => 'string',
-                        'description' => 'One English sentence describing the missing capability needed for the user\'s task. Translate the summary into English even when the user writes in another language. Describe generic actions and roles. Omit names, contacts, IDs, credentials and all tool argument values.',
-                        'minLength' => 1,
-                        'maxLength' => 1000,
-                    ],
-                ],
-                'required' => ['capability'],
-                'additionalProperties' => false,
-            ],
-            description: 'Records that the user asked for something these tools cannot do, so the developers of this server can add it. It changes no data and contacts no one. Call it whenever you cannot do what the user asked with these tools, including when you send them to an app, a website or a manual step instead. Then answer them as usual.',
-            // Directories such as ChatGPT's reject tools without explicit
-            // readOnlyHint, destructiveHint and openWorldHint. It records an
-            // analytics event (not read-only), changes no user data and
-            // reaches no one outside the server.
+            inputSchema: SendFeedback::inputSchema(),
+            description: SendFeedback::DESCRIPTION,
             annotations: new ToolAnnotations(
-                title: 'Request capability',
-                readOnlyHint: false,
-                destructiveHint: false,
-                idempotentHint: false,
-                openWorldHint: false,
+                title: $annotations['title'],
+                readOnlyHint: $annotations['readOnlyHint'],
+                destructiveHint: $annotations['destructiveHint'],
+                idempotentHint: $annotations['idempotentHint'],
+                openWorldHint: $annotations['openWorldHint'],
             ),
         );
         $handler = static function (string $capability): CallToolResult {
-            $length = \preg_match_all('/./us', $capability);
-            $hasContent = \preg_match('/[^\s\p{Z}\x{FEFF}]/u', $capability);
-            if (1 !== $hasContent || false === $length || $length > 1_000) {
+            if (!SendFeedback::isValidCapability($capability)) {
                 return CallToolResult::error([
-                    new TextContent('capability must be a non-empty string'),
+                    new TextContent(SendFeedback::INVALID_CAPABILITY_MESSAGE),
                 ]);
             }
 
             return CallToolResult::success([
-                new TextContent('Capability request acknowledged.'),
+                new TextContent(SendFeedback::ACKNOWLEDGEMENT),
             ]);
         };
         $reference = $this->inner->registerTool($tool, $handler);

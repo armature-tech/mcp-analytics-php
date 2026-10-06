@@ -57,15 +57,28 @@ final class Telemetry
         if (null !== $agentThinking) {
             $normalized['agent_thinking'] = $agentThinking;
         }
-        $frustration = self::firstFrustration(
-            $telemetry['user_frustration'] ?? null,
-            $telemetry['frustration_level'] ?? null,
-        );
-        if (null !== $frustration) {
-            $normalized['user_frustration'] = $frustration;
-        }
+        // user_frustration and its frustration_level alias are no longer
+        // advertised. Cached clients may still send them; they are dropped.
 
         return $normalized;
+    }
+
+    /**
+     * Drop user_frustration and its frustration_level alias, which are no
+     * longer advertised or exported, from a raw telemetry value.
+     *
+     * @param array<string, mixed>|null $telemetry
+     *
+     * @return array<string, mixed>|null
+     */
+    public static function withoutRetiredFields(?array $telemetry): ?array
+    {
+        if (null === $telemetry) {
+            return null;
+        }
+        unset($telemetry['user_frustration'], $telemetry['frustration_level']);
+
+        return $telemetry;
     }
 
     /**
@@ -99,12 +112,7 @@ final class Telemetry
             }
         }
 
-        if (!isset($merged['user_frustration']) && isset($fieldMap['user_frustration'])) {
-            $candidate = self::firstFrustration($arguments[$fieldMap['user_frustration']] ?? null);
-            if (null !== $candidate) {
-                $merged['user_frustration'] = $candidate;
-            }
-        }
+        // A user_frustration mapping is accepted by Config and ignored.
 
         return [] === $merged ? $telemetry : $merged;
     }
@@ -113,17 +121,6 @@ final class Telemetry
     {
         foreach ($values as $value) {
             if (\is_string($value)) {
-                return $value;
-            }
-        }
-
-        return null;
-    }
-
-    private static function firstFrustration(mixed ...$values): ?string
-    {
-        foreach ($values as $value) {
-            if (\is_string($value) && \in_array($value, ['low', 'medium', 'high'], true)) {
                 return $value;
             }
         }

@@ -90,6 +90,16 @@ The instrumentation covers manual tools, explicit `Builder::add(...)`
 definitions, custom loaders, and attribute discovery because it decorates the
 official registry after definitions are finalized.
 
+The SDK also adds a `send_feedback` tool ([details](#feedback-tool-send_feedback)).
+To turn it off:
+
+```php
+$analytics = Analytics::instrument(
+    builder: $builder,
+    config: Config::fromEnvironment(sendFeedback: false),
+);
+```
+
 `mcp/sdk` 0.7 accepts closures, class/method pairs, and invokable class strings
 (not invokable object instances). Adapt a bare named function or invokable
 object with `Closure::fromCallable(...)` before passing it to `addTool()`.
@@ -163,16 +173,15 @@ For a normal tool, the public input schema receives an optional top-level
 {
   "telemetry": {
     "user_intent": "Check whether the customer's last payment succeeded",
-    "call_purpose": "The payment lookup tool provides the requested status",
-    "user_frustration": "low"
+    "call_purpose": "The payment lookup tool provides the requested status"
   }
 }
 ```
 
-The SDK removes this field before the customer handler runs. All fields are
-optional. Agents should include `call_purpose` on each call and include
-`user_intent`/`user_frustration` only on the first call after a new user
-message.
+The SDK removes this field before the customer handler runs. Both fields are
+optional. Their parameter descriptions ask for `call_purpose` on each call and
+`user_intent` only on the first call after a new user message. The SDK adds no
+text to tool descriptions.
 
 Pass a PSR-3 logger as `logger: $logger` to route configuration warnings
 through the application's logging stack. Without one, the SDK uses the PHP
@@ -201,7 +210,11 @@ $config = new Config(captureTelemetry: false);
 
 Tools advertise `call_purpose` as a short public description of the action. It uses only the visible request and the tool function. Both `user_intent` and `call_purpose` use generic terms for names, document titles, teams, filters and other tool argument values. The SDK continues to accept `agent_thinking` and `context` from cached clients. `call_purpose` takes precedence, including an explicit empty string. Events keep the existing `agent_thinking` and `context` metadata keys so stored analytics remain compatible.
 
-The telemetry field map accepts `call_purpose` and the previous `agent_thinking` key. Explicit telemetry takes precedence over mapped arguments. Refresh the MCP connection after upgrading so the client loads the new tool schemas.
+`user_frustration` and its older spelling `frustration_level` are no longer advertised or exported. A cached client that still sends them has them removed with the rest of `telemetry`; no event, `emit` call or `onError` batch carries them.
+
+Earlier releases appended a telemetry hint, and optionally a `request_capability` sentence, to every tool description. The SDK now removes that exact trailing hint when it finds one, so descriptions registered through an older wrapper come out clean. Customer prose that quotes a hint is kept.
+
+The telemetry field map accepts `call_purpose` and the previous `agent_thinking` key. A `user_frustration` key is accepted and ignored. Explicit telemetry takes precedence over mapped arguments. Refresh the MCP connection after upgrading so the client loads the new tool schemas.
 
 ## Privacy and delivery
 
@@ -256,38 +269,39 @@ $config = new Config(
 
 Do not use telemetry as an authentication or authorization boundary.
 
-## Requesting missing capabilities
+## Feedback tool (send_feedback)
 
-When a delivery path is configured, the SDK adds an uninstrumented
-`request_capability` tool. Agents can use it to report unmet demand when no
-existing tool can complete the request.
+When a delivery path is configured, the SDK adds an uninstrumented feedback
+tool, `send_feedback` (named `request_capability` in earlier releases). Agents
+call it when the server's tools cannot do what the user asked. Calls are
+recorded as `tool_call` events with `metadata.capability_request: true`.
+
+It is on by default. Turn it off with `sendFeedback: false`:
+
+```php
+$config = Config::fromEnvironment(sendFeedback: false);
+// or
+$config = new Config(apiKey: $key, sendFeedback: false);
+```
+
+The earlier `requestCapability` setting is still accepted as a deprecated
+alias; when both are set, `sendFeedback` wins.
 
 The tool declares the annotations app directories such as ChatGPT's require:
 `readOnlyHint: false` (it records an analytics event), `destructiveHint: false`
 (it changes no user data) and `openWorldHint: false` (it contacts no one), plus
-`idempotentHint: false` and the title "Request capability".
+`idempotentHint: false` and the title "Send feedback".
 
-Set `requestCapability: false` to disable it. With the default setting, a
-customer tool of the same name wins. With `requestCapability: true`, a
-collision throws during `build()` so the configuration cannot silently drift.
+With the default setting, a customer tool already named `send_feedback` wins
+and the SDK skips its own. With `sendFeedback: true`, that collision throws
+during `build()` so the configuration cannot silently drift.
 
-When `request_capability` is enabled, the telemetry hint appended to every
-injected-mode tool's description also points agents at it, so a tool call
-and a capability request stay one hop apart.
+No other tool's description mentions `send_feedback`. If the server is listed
+in a connector directory and keeps the tool, mention it in the listing as a
+feedback tool.
 
-If a tool's own description is already long enough that appending the full
-hint would exceed 1024 UTF-8 bytes, the SDK falls back to appending just the
-telemetry sentence, and to leaving the description untouched entirely if
-even that does not fit; either fallback logs a one-time warning per tool
-and never truncates the description or affects telemetry collection.
-
-Set `descriptionLengthLogLevel` to `'debug'`, `'info'` or `'none'` to log
-that notice at a lower level, or not at all (default `'warning'`). Without a
-PSR-3 logger, only warnings reach the PHP error log.
-
-```php
-new Config(apiKey: $key, logger: $logger, descriptionLengthLogLevel: 'info');
-```
+`descriptionLengthLogLevel` is deprecated. It is still accepted and ignored:
+nothing is appended to descriptions, so there is no length notice.
 
 ## Existing custom registry, handler, or container
 
@@ -358,7 +372,7 @@ machine-readable output.
 - **No events arrive:** confirm `ANALYTICS_INGEST_API_KEY` is present in the
   server process and that `ANALYTICS_INGEST_URL` matches the Armature region.
   With no API key or custom emitter, the recorder is intentionally a no-op and
-  `request_capability` is not registered.
+  `send_feedback` is not registered.
 - **Delivery reports an error:** inspect only the safe `DeliveryError` fields
   in `onError`; do not log its batch argument. HTTP 401/403 errors are not
   retried. HTTP 429, HTTP 5xx, timeouts, and connection failures receive one

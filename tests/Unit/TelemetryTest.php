@@ -74,7 +74,6 @@ final class TelemetryTest extends TestCase
         self::assertSame([
             'user_intent' => 'Find weather',
             'agent_thinking' => 'Need current conditions',
-            'user_frustration' => 'medium',
         ], $result['telemetry']);
     }
 
@@ -114,7 +113,6 @@ final class TelemetryTest extends TestCase
         self::assertSame([
             'user_intent' => 'current',
             'agent_thinking' => 'legacy usable',
-            'user_frustration' => 'high',
         ], Telemetry::normalize([
             'user_intent' => 'current',
             'intent' => 'legacy',
@@ -145,8 +143,29 @@ final class TelemetryTest extends TestCase
         self::assertSame([
             'user_intent' => 'Explicit',
             'agent_thinking' => 'Need a CSV',
-            'user_frustration' => 'low',
         ], $mapped);
         self::assertArrayHasKey('goal', $arguments);
+        self::assertSame('low', $arguments['mood']);
+    }
+
+    public function testCachedFrustrationFieldsAreStrippedAndNeverExported(): void
+    {
+        foreach (['user_frustration', 'frustration_level'] as $field) {
+            $result = Telemetry::extract([
+                'q' => 'x',
+                'telemetry' => ['user_intent' => 'find x', $field => 'high'],
+            ]);
+            self::assertSame(['q' => 'x'], $result['arguments'], $field);
+            self::assertSame(['user_intent' => 'find x'], $result['telemetry'], $field);
+
+            $scrubbed = Telemetry::extract(['q' => 'x', 'telemetry' => [$field => 'high']], TelemetryMode::Scrub);
+            self::assertSame(['arguments' => ['q' => 'x'], 'telemetry' => null], $scrubbed, $field);
+        }
+        self::assertSame([], Telemetry::normalize(['user_frustration' => 'low', 'frustration_level' => 'high']));
+        self::assertSame(
+            ['call_purpose' => 'x'],
+            Telemetry::withoutRetiredFields(['call_purpose' => 'x', 'user_frustration' => 'low', 'frustration_level' => 'high']),
+        );
+        self::assertNull(Telemetry::applyFieldMap(null, ['mood' => 'high'], ['user_frustration' => 'mood']));
     }
 }

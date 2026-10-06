@@ -25,7 +25,7 @@ final class HttpE2eTest extends TestCase
             ->setSession(sessionStore: $store);
         $analytics = Analytics::instrument(
             $builder,
-            new Config(emitter: $emitter, requestCapability: false),
+            new Config(emitter: $emitter, sendFeedback: false),
         );
         $builder->addTool(
             static fn (string $text): string => 'echo: ' . $text,
@@ -94,6 +94,16 @@ final class HttpE2eTest extends TestCase
         ));
         self::assertCount(1, $noArguments);
         self::assertSame([], $noArguments[0]['inputSchema']['required']);
+        foreach ($listed['result']['tools'] as $listedTool) {
+            self::assertSame(
+                ['user_intent', 'call_purpose'],
+                \array_keys($listedTool['inputSchema']['properties']['telemetry']['properties']),
+            );
+            self::assertSame(
+                ['echo' => 'Echo text', 'no_arguments' => 'No arguments'][$listedTool['name']],
+                $listedTool['description'],
+            );
+        }
 
         $workflowRunId = '019f942a-5d64-7322-8e50-5d17333768d9';
         $call = self::request([
@@ -104,9 +114,12 @@ final class HttpE2eTest extends TestCase
                 'name' => 'echo',
                 'arguments' => [
                     'text' => 'hello',
+                    // A client holding a cached schema from an earlier release.
                     'telemetry' => [
                         'user_intent' => 'exercise HTTP',
                         'call_purpose' => 'the HTTP call checks request context',
+                        'user_frustration' => 'high',
+                        'frustration_level' => 'medium',
                     ],
                 ],
             ],
@@ -140,10 +153,11 @@ final class HttpE2eTest extends TestCase
         self::assertSame(\hash('sha256', 'principal-123'), $toolEvent['actor_id']);
         self::assertTrue($toolEvent['is_workflow']);
         self::assertSame($workflowRunId, $toolEvent['workflow_run_id']);
-        self::assertStringNotContainsString(
-            'never-export-this',
-            \json_encode($emitter->batches, JSON_THROW_ON_ERROR),
-        );
+        self::assertSame('exercise HTTP', $toolEvent['metadata']['user_intent']);
+        $encoded = \json_encode($emitter->batches, JSON_THROW_ON_ERROR);
+        self::assertStringNotContainsString('never-export-this', $encoded);
+        self::assertStringNotContainsString('frustration', $encoded);
+        self::assertStringNotContainsString('medium', $encoded);
     }
 
     /**

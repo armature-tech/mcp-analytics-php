@@ -10,6 +10,9 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
 
 /**
+ * TelemetryFieldMap: user_frustration is accepted for compatibility and
+ * ignored; that field is no longer exported.
+ *
  * @phpstan-type ActorContext array{
  *   headers?: array<string, string|list<string>>,
  *   attributes?: array<string, mixed>,
@@ -29,6 +32,9 @@ final class Config
 {
     public const DEFAULT_ENDPOINT_URL = 'https://app.armature.tech/api/mcp-analytics/ingest';
 
+    /**
+     * Accepted values of the deprecated descriptionLengthLogLevel setting.
+     */
     public const DESCRIPTION_LENGTH_LOG_LEVELS = ['none', LogLevel::DEBUG, LogLevel::INFO, LogLevel::WARNING];
 
     /**
@@ -55,13 +61,26 @@ final class Config
         public readonly mixed $redactEvent = null,
         public readonly ?SchedulerInterface $scheduler = null,
         public readonly array $telemetryFieldMap = [],
+        /**
+         * @deprecated Use sendFeedback. Still accepted; sendFeedback wins
+         *             when both are set.
+         */
         public readonly ?bool $requestCapability = null,
         public readonly ?LoggerInterface $logger = null,
         /**
-         * Level of the one-time notice for a tool description too long for
-         * the full telemetry hint: 'none', 'debug', 'info' or 'warning'.
+         * @deprecated The SDK no longer appends text to tool descriptions,
+         *             so there is no length notice to log. Still validated
+         *             ('none', 'debug', 'info' or 'warning') and otherwise
+         *             ignored.
          */
         public readonly string $descriptionLengthLogLevel = LogLevel::WARNING,
+        /**
+         * The SDK-owned send_feedback tool. Null (default) means on whenever
+         * a delivery path is configured; false turns it off; true turns it on
+         * and makes a customer tool named send_feedback a configuration
+         * error.
+         */
+        public readonly ?bool $sendFeedback = null,
     ) {
         if ($this->timeoutMs < 1) {
             throw new \InvalidArgumentException('timeoutMs must be at least 1.');
@@ -82,7 +101,11 @@ final class Config
         }
     }
 
-    public static function fromEnvironment(): self
+    /**
+     * Read ANALYTICS_INGEST_API_KEY and ANALYTICS_INGEST_URL. Pass
+     * sendFeedback: false to turn off the send_feedback tool.
+     */
+    public static function fromEnvironment(?bool $sendFeedback = null): self
     {
         $apiKey = self::environment('ANALYTICS_INGEST_API_KEY');
         $endpoint = self::environment('ANALYTICS_INGEST_URL');
@@ -90,6 +113,7 @@ final class Config
         return new self(
             endpointUrl: $endpoint ?? self::DEFAULT_ENDPOINT_URL,
             apiKey: $apiKey,
+            sendFeedback: $sendFeedback,
         );
     }
 
@@ -98,14 +122,47 @@ final class Config
         return $this->enabled && (null !== $this->emitter || (null !== $this->apiKey && '' !== \trim($this->apiKey)));
     }
 
-    public function requestCapabilityEnabled(): bool
+    /**
+     * The resolved send_feedback setting: sendFeedback when set, otherwise
+     * the deprecated requestCapability alias, otherwise null (default).
+     */
+    public function sendFeedbackSetting(): ?bool
     {
-        return false !== $this->requestCapability && $this->hasDeliveryPath();
+        return $this->sendFeedback ?? $this->requestCapability;
     }
 
+    /**
+     * send_feedback is on by default whenever a delivery path is configured,
+     * and off when set to false.
+     */
+    public function sendFeedbackEnabled(): bool
+    {
+        return false !== $this->sendFeedbackSetting() && $this->hasDeliveryPath();
+    }
+
+    /**
+     * True when send_feedback was explicitly set to true, not merely on by
+     * default.
+     */
+    public function sendFeedbackExplicit(): bool
+    {
+        return true === $this->sendFeedbackSetting();
+    }
+
+    /**
+     * @deprecated Use sendFeedbackEnabled()
+     */
+    public function requestCapabilityEnabled(): bool
+    {
+        return $this->sendFeedbackEnabled();
+    }
+
+    /**
+     * @deprecated Use sendFeedbackExplicit()
+     */
     public function requestCapabilityExplicit(): bool
     {
-        return true === $this->requestCapability;
+        return $this->sendFeedbackExplicit();
     }
 
     private static function environment(string $name): ?string

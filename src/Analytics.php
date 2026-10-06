@@ -45,7 +45,7 @@ final class Analytics
             ->setRegistry($instrumentedRegistry)
             ->setReferenceHandler($instrumentedHandler);
 
-        $instrumentedRegistry->registerRequestCapability();
+        $instrumentedRegistry->registerSendFeedback();
 
         return new Instrumentation(
             $recorder,

@@ -143,7 +143,7 @@ final class Recorder
         }
 
         $mode = $telemetryMode ?? $this->toolModes[$name] ?? TelemetryMode::Injected;
-        $capturedTelemetry = TelemetryMode::Owned === $mode ? null : $telemetry;
+        $capturedTelemetry = TelemetryMode::Owned === $mode ? null : Telemetry::withoutRetiredFields($telemetry);
         $effectiveTelemetry = $this->config->captureTelemetry
             ? Telemetry::applyFieldMap(
                 $capturedTelemetry,

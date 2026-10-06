@@ -218,6 +218,104 @@ final class RecorderTest extends TestCase
         self::assertSame([[null, 'actor-context-session']], $observed);
         self::assertStringNotContainsString('private', \json_encode($emitter->batches, JSON_THROW_ON_ERROR));
     }
+
+    public function testCachedFrustrationFieldsReachNoSink(): void
+    {
+        $seen = [];
+        $actorContexts = [];
+        $hookCandidates = [];
+        $errorBatches = [];
+        $emitter = new RecorderEmitter();
+        $recorder = new Recorder(
+            new Config(
+                emitter: $emitter,
+                onError: static function (\Throwable $error, array $batch) use (&$errorBatches): void {
+                    $errorBatches[] = $batch;
+                },
+                actorId: static function (array $context) use (&$actorContexts): string {
+                    $actorContexts[] = $context;
+
+                    return 'actor';
+                },
+                redactEvent: static function (array $event) use (&$hookCandidates): array {
+                    $hookCandidates[] = $event;
+
+                    return $event;
+                },
+                telemetryFieldMap: ['user_frustration' => 'mood'],
+            ),
+            $emitter,
+        );
+        $recorder->instrumentToolCall(
+            'cached',
+            [
+                'q' => 'x',
+                'mood' => 'calm',
+                'telemetry' => [
+                    'user_intent' => 'find x',
+                    'call_purpose' => 'Search records',
+                    'user_frustration' => 'high',
+                    'frustration_level' => 'medium',
+                ],
+            ],
+            static function (mixed $arguments) use (&$seen): string {
+                $seen = $arguments;
+
+                return 'ok';
+            },
+            sessionId: 'session',
+        );
+        $recorder->recordToolCall(
+            'direct',
+            telemetry: ['user_intent' => 'direct', 'user_frustration' => 'high', 'frustration_level' => 'medium'],
+            sessionId: 'session',
+        );
+
+        $failing = new Recorder(
+            new Config(
+                emitter: new FailingRecorderEmitter(),
+                onError: static function (\Throwable $error, array $batch) use (&$errorBatches): void {
+                    $errorBatches[] = $batch;
+                },
+            ),
+        );
+        $failing->instrumentToolCall(
+            'cached',
+            ['telemetry' => ['user_intent' => 'find x', 'user_frustration' => 'high', 'frustration_level' => 'medium']],
+            static fn (): string => 'ok',
+            sessionId: 'session',
+        );
+        $failing->close();
+
+        self::assertSame(['q' => 'x', 'mood' => 'calm'], $seen);
+        $tool = $emitter->event('tool_call');
+        self::assertSame('find x', $tool['metadata']['user_intent']);
+        self::assertSame('Search records', $tool['metadata']['agent_thinking']);
+        self::assertArrayNotHasKey('user_frustration', $tool['metadata']);
+        self::assertArrayNotHasKey('frustration_level', $tool['metadata']);
+        self::assertCount(2, $hookCandidates);
+        self::assertNotEmpty($actorContexts);
+        self::assertNotEmpty($errorBatches);
+        foreach ([
+            'events' => $emitter->batches,
+            'actor contexts' => $actorContexts,
+            'redactEvent candidates' => $hookCandidates,
+            'onError batches' => $errorBatches,
+        ] as $label => $payload) {
+            $encoded = \json_encode($payload, JSON_THROW_ON_ERROR);
+            self::assertStringNotContainsString('frustration', $encoded, $label);
+            self::assertStringNotContainsString('high', $encoded, $label);
+            self::assertStringNotContainsString('medium', $encoded, $label);
+        }
+    }
+}
+
+final class FailingRecorderEmitter implements EmitterInterface
+{
+    public function emit(array $batch): void
+    {
+        throw new \RuntimeException('delivery failed');
+    }
 }
 
 final class RecorderEmitter implements EmitterInterface

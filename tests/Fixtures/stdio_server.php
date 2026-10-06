@@ -36,7 +36,7 @@ $analytics = Analytics::instrument(
     $builder,
     new Config(
         emitter: new JsonLineEmitter($sinkPath),
-        requestCapability: false,
+        sendFeedback: false,
     ),
 );
 $builder->addTool(

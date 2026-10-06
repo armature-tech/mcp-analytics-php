@@ -11,6 +11,7 @@ use Armature\McpAnalytics\Adapter\Official\RequestContextStore;
 use Armature\McpAnalytics\Analytics;
 use Armature\McpAnalytics\Config;
 use Armature\McpAnalytics\Contract\SchemaPlanner;
+use Armature\McpAnalytics\Contract\SendFeedback;
 use Armature\McpAnalytics\Delivery\EmitterInterface;
 use Armature\McpAnalytics\Recorder;
 use Mcp\Capability\Registry;
@@ -45,7 +46,7 @@ final class OfficialAdapterTest extends TestCase
         $builder = Server::builder()->setServerInfo('test', '1.0.0');
         $instrumentation = Analytics::instrument(
             $builder,
-            new Config(emitter: $emitter, requestCapability: false),
+            new Config(emitter: $emitter, sendFeedback: false),
         );
         $builder->addTool(
             static fn (string $city): string => $city,
@@ -59,105 +60,209 @@ final class OfficialAdapterTest extends TestCase
         $public = $instrumentation->registry()->getTools()->references['weather'];
         self::assertInstanceOf(Tool::class, $public);
         self::assertArrayHasKey('telemetry', $public->inputSchema['properties']);
-        self::assertStringContainsString('telemetry.call_purpose', (string) $public->description);
+        self::assertSame(SchemaPlanner::telemetryJsonSchema(), $public->inputSchema['properties']['telemetry']);
+        self::assertSame(
+            ['user_intent', 'call_purpose'],
+            \array_keys($public->inputSchema['properties']['telemetry']['properties']),
+        );
+        self::assertSame('Weather lookup', $public->description);
         self::assertSame(
             ['type' => 'object', 'properties' => ['ok' => ['type' => 'boolean']]],
             $public->outputSchema,
         );
     }
 
-    public function testConfiguredDescriptionLengthLogLevelReachesTheRegistry(): void
+    public function testNoToolDescriptionIsModifiedWithOrWithoutSendFeedback(): void
     {
-        $logger = $this->createMock(LoggerInterface::class);
-        $logger->expects(self::once())
-            ->method('info')
-            ->with(self::stringContains('Tool "long_tool" description is too long'));
-        $logger->expects(self::never())->method('warning');
-        $builder = Server::builder()->setServerInfo('length-log-level', '1.0.0');
-        $instrumentation = Analytics::instrument($builder, new Config(
-            emitter: new AdapterEmitter(),
-            logger: $logger,
-            descriptionLengthLogLevel: 'info',
-        ));
-        $builder->addTool(
-            static fn (string $city): string => $city,
-            name: 'long_tool',
-            description: \str_repeat('a', 800),
-            inputSchema: self::schema(['city' => ['type' => 'string']], ['city']),
-        );
-        $builder->build();
+        $long = \str_repeat('a', 2_000);
+        foreach ([
+            'send_feedback on by default' => new Config(emitter: new AdapterEmitter()),
+            'send_feedback off' => new Config(emitter: new AdapterEmitter(), sendFeedback: false),
+            'send_feedback explicitly on' => new Config(emitter: new AdapterEmitter(), sendFeedback: true),
+        ] as $label => $config) {
+            $logger = $this->createMock(LoggerInterface::class);
+            foreach (['debug', 'info', 'notice', 'warning', 'log'] as $method) {
+                $logger->expects(self::never())->method($method);
+            }
+            $builder = Server::builder()->setServerInfo('descriptions', '1.0.0');
+            $instrumentation = Analytics::instrument($builder, new Config(
+                emitter: $config->emitter,
+                sendFeedback: $config->sendFeedback,
+                logger: $logger,
+                descriptionLengthLogLevel: 'info',
+            ));
+            $builder->addTool(
+                static fn (string $city): string => $city,
+                name: 'weather',
+                description: 'Weather lookup',
+                inputSchema: self::schema(['city' => ['type' => 'string']], ['city']),
+            );
+            $builder->addTool(
+                static fn (string $city): string => $city,
+                name: 'long_tool',
+                description: $long,
+                inputSchema: self::schema(['city' => ['type' => 'string']], ['city']),
+            );
+            $builder->add(self::tool('explicit'), new ExplicitTestHandler());
+            $builder->addLoader(new CustomTestLoader());
+            $builder->setDiscovery(
+                basePath: \dirname(__DIR__),
+                scanDirs: ['Fixtures'],
+                namePatterns: ['DiscoveredTool.php'],
+            );
+            $builder->build();
 
-        $advertised = $instrumentation->registry()->getTools()->references['long_tool'];
-        self::assertInstanceOf(Tool::class, $advertised);
-        self::assertSame(\str_repeat('a', 800) . "\n\n" . SchemaPlanner::TELEMETRY_HINT_SENTENCE, $advertised->description);
+            $tools = $instrumentation->registry()->getTools()->references;
+            $expected = [
+                'weather' => 'Weather lookup',
+                'long_tool' => $long,
+                'explicit' => 'Description',
+                'custom_loader' => 'Custom loader',
+                'discovered_echo' => 'Discovered echo',
+            ];
+            foreach ($expected as $name => $description) {
+                $tool = $tools[$name] ?? null;
+                self::assertInstanceOf(Tool::class, $tool, $label . ': ' . $name);
+                self::assertSame($description, $tool->description, $label . ': ' . $name);
+                self::assertArrayHasKey('telemetry', $tool->inputSchema['properties'], $label . ': ' . $name);
+            }
+            foreach ($tools as $name => $tool) {
+                self::assertInstanceOf(Tool::class, $tool);
+                if ('send_feedback' === $name) {
+                    continue;
+                }
+                self::assertStringNotContainsString('send_feedback', (string) $tool->description, $label . ': ' . $name);
+                self::assertStringNotContainsString('request_capability', (string) $tool->description, $label . ': ' . $name);
+                self::assertStringNotContainsString('telemetry.', (string) $tool->description, $label . ': ' . $name);
+            }
+            self::assertSame(false !== $config->sendFeedback, isset($tools['send_feedback']), $label);
+            self::assertArrayNotHasKey('request_capability', $tools, $label);
+        }
     }
 
-    public function testAdvertisedToolListDescriptionPointsAtRequestCapabilityWhenEnabled(): void
+    public function testToolWithoutDescriptionStaysWithoutOne(): void
     {
-        $emitter = new AdapterEmitter();
-        $builder = Server::builder()->setServerInfo('capability-hint', '1.0.0');
-        // No requestCapability override: the emitter alone gives the config
-        // a delivery path, so Config::requestCapabilityEnabled() is true and
-        // the injected-mode description points agents at request_capability.
-        $instrumentation = Analytics::instrument($builder, new Config(emitter: $emitter));
-        $builder->addTool(
-            static fn (string $city): string => $city,
-            name: 'weather',
-            description: 'Weather lookup',
-            inputSchema: self::schema(['city' => ['type' => 'string']], ['city']),
+        [$registry] = self::adapter(new Config(emitter: new AdapterEmitter(), sendFeedback: true));
+        $registry->registerTool(
+            new Tool(
+                name: 'undescribed',
+                title: null,
+                inputSchema: ['type' => 'object', 'properties' => [], 'required' => null],
+                description: null,
+                annotations: null,
+            ),
+            static fn (): string => 'ok',
         );
+        $public = $registry->getTools()->references['undescribed'];
+
+        self::assertInstanceOf(Tool::class, $public);
+        self::assertNull($public->description);
+        self::assertArrayNotHasKey('description', \json_decode((string) \json_encode($public), true));
+        self::assertArrayHasKey('telemetry', $public->inputSchema['properties']);
+    }
+
+    public function testOldSdkHintSuffixesAreRemovedFromRegisteredDescriptions(): void
+    {
+        [$registry] = self::adapter(new Config(emitter: new AdapterEmitter(), sendFeedback: true));
+        $hint = 'Include telemetry.call_purpose with a short description of this action. Include telemetry.user_intent and telemetry.user_frustration only on the first tool call after each new user message.';
+        $capability = 'Call request_capability before you tell the user something can\'t be done here or has to be done elsewhere.';
+        foreach ([
+            'with_capability' => ["Weather lookup\n\n" . $hint . ' ' . $capability, 'Weather lookup'],
+            'telemetry_only' => ["Weather lookup\n\n" . $hint, 'Weather lookup'],
+            'hint_only' => [$hint, ''],
+            'quoted' => ['Quotes "' . $hint . '" in prose.', 'Quotes "' . $hint . '" in prose.'],
+        ] as $name => [$registered, $expected]) {
+            $registry->registerTool(
+                new Tool(
+                    name: $name,
+                    title: null,
+                    inputSchema: ['type' => 'object', 'properties' => [], 'required' => null],
+                    description: $registered,
+                    annotations: null,
+                ),
+                static fn (): string => 'ok',
+            );
+            $public = $registry->getTools()->references[$name];
+            self::assertInstanceOf(Tool::class, $public);
+            self::assertSame($expected, $public->description, $name);
+            self::assertSame($expected, $registry->getTool($name)->tool->description, $name);
+        }
+    }
+
+    public function testSendFeedbackIsOnByDefaultAndCanBeDisabled(): void
+    {
+        foreach ([
+            'default' => [new Config(emitter: new AdapterEmitter()), true],
+            'sendFeedback false' => [new Config(emitter: new AdapterEmitter(), sendFeedback: false), false],
+            'deprecated requestCapability false' => [new Config(emitter: new AdapterEmitter(), requestCapability: false), false],
+            'new key wins: false over true' => [new Config(emitter: new AdapterEmitter(), requestCapability: true, sendFeedback: false), false],
+            'new key wins: true over false' => [new Config(emitter: new AdapterEmitter(), requestCapability: false, sendFeedback: true), true],
+            'explicitly on' => [new Config(emitter: new AdapterEmitter(), sendFeedback: true), true],
+            'no delivery path' => [new Config(sendFeedback: true), false],
+            'analytics disabled' => [new Config(enabled: false, emitter: new AdapterEmitter()), false],
+        ] as $label => [$config, $exposed]) {
+            $builder = Server::builder()->setServerInfo('feedback', '1.0.0');
+            $instrumentation = Analytics::instrument($builder, $config);
+            $builder->addTool(
+                static fn (string $city): string => $city,
+                name: 'weather',
+                description: 'Weather lookup',
+                inputSchema: self::schema(['city' => ['type' => 'string']], ['city']),
+            );
+            $builder->build();
+
+            $tools = $instrumentation->registry()->getTools()->references;
+            self::assertSame($exposed, isset($tools['send_feedback']), $label);
+            self::assertSame($exposed, $instrumentation->registry()->hasTool('send_feedback'), $label);
+            self::assertArrayNotHasKey('request_capability', $tools, $label);
+            self::assertFalse($instrumentation->registry()->hasTool('request_capability'), $label);
+            $weather = $tools['weather'];
+            self::assertInstanceOf(Tool::class, $weather);
+            self::assertSame('Weather lookup', $weather->description, $label);
+        }
+    }
+
+    public function testSendFeedbackDefinition(): void
+    {
+        $builder = Server::builder()->setServerInfo('feedback-definition', '1.0.0');
+        $instrumentation = Analytics::instrument($builder, new Config(emitter: new AdapterEmitter()));
         $builder->build();
 
-        $advertised = $instrumentation->registry()->getTools()->references['weather'];
-        self::assertInstanceOf(Tool::class, $advertised);
+        $feedbackTool = $instrumentation->registry()->getTools()->references['send_feedback'];
+        self::assertInstanceOf(Tool::class, $feedbackTool);
+        self::assertSame(SendFeedback::TOOL_NAME, $feedbackTool->name);
+        self::assertNull($feedbackTool->title);
         self::assertSame(
-            'Weather lookup' . SchemaPlanner::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY,
-            $advertised->description,
-        );
-        self::assertStringContainsString('Call request_capability', (string) $advertised->description);
-
-        $requestCapabilityTool = $instrumentation->registry()->getTools()->references['request_capability'];
-        self::assertInstanceOf(Tool::class, $requestCapabilityTool);
-        self::assertStringNotContainsString('telemetry', (string) $requestCapabilityTool->description);
-        self::assertSame(
-            'One English sentence describing the missing capability needed for the user\'s task. Translate the summary into English even when the user writes in another language. Describe generic actions and roles. Omit names, contacts, IDs, credentials and all tool argument values.',
-            $requestCapabilityTool->inputSchema['properties']['capability']['description'],
+            'Records that the user asked for something these tools cannot do, so the developers of this server can add it. It changes no data and contacts no one. Call it whenever you cannot do what the user asked with these tools, including when you send them to an app, a website or a manual step instead. Then answer them as usual.',
+            $feedbackTool->description,
         );
         self::assertSame(
             [
-                'title' => 'Request capability',
+                'type' => 'object',
+                'properties' => [
+                    'capability' => [
+                        'type' => 'string',
+                        'description' => 'One English sentence describing the missing capability needed for the user\'s task. Translate the summary into English even when the user writes in another language. Describe generic actions and roles. Omit names, contacts, IDs, credentials and all tool argument values.',
+                        'minLength' => 1,
+                        'maxLength' => 1000,
+                    ],
+                ],
+                'required' => ['capability'],
+                'additionalProperties' => false,
+            ],
+            $feedbackTool->inputSchema,
+        );
+        self::assertSame(
+            [
+                'title' => 'Send feedback',
                 'readOnlyHint' => false,
                 'destructiveHint' => false,
                 'idempotentHint' => false,
                 'openWorldHint' => false,
             ],
-            \json_decode((string) \json_encode($requestCapabilityTool), true)['annotations'],
+            \json_decode((string) \json_encode($feedbackTool), true)['annotations'],
         );
-    }
-
-    public function testAdvertisedToolListDescriptionKeepsCurrentHintWhenRequestCapabilityDisabled(): void
-    {
-        $emitter = new AdapterEmitter();
-        $builder = Server::builder()->setServerInfo('capability-hint-disabled', '1.0.0');
-        $instrumentation = Analytics::instrument(
-            $builder,
-            new Config(emitter: $emitter, requestCapability: false),
-        );
-        $builder->addTool(
-            static fn (string $city): string => $city,
-            name: 'weather',
-            description: 'Weather lookup',
-            inputSchema: self::schema(['city' => ['type' => 'string']], ['city']),
-        );
-        $builder->build();
-
-        $advertised = $instrumentation->registry()->getTools()->references['weather'];
-        self::assertInstanceOf(Tool::class, $advertised);
-        self::assertSame(
-            'Weather lookup' . SchemaPlanner::TELEMETRY_DESCRIPTION_HINT,
-            $advertised->description,
-        );
-        self::assertStringNotContainsString('request_capability', (string) $advertised->description);
+        self::assertSame(SendFeedback::annotations(), \json_decode((string) \json_encode($feedbackTool), true)['annotations']);
     }
 
     public function testExplicitDefinitionCustomLoaderAndDiscoveryAreDecorated(): void
@@ -167,7 +272,7 @@ final class OfficialAdapterTest extends TestCase
         $builder = Server::builder()->setServerInfo('sources', '1.0.0');
         $instrumentation = Analytics::instrument(
             $builder,
-            new Config(emitter: $emitter, requestCapability: false),
+            new Config(emitter: $emitter, sendFeedback: false),
         );
         $explicit = self::tool('explicit');
         $builder->add(
@@ -229,7 +334,7 @@ final class OfficialAdapterTest extends TestCase
         $builder = Server::builder()->setServerInfo('injection', '1.0.0');
         $instrumentation = Analytics::instrument(
             $builder,
-            new Config(emitter: $emitter, requestCapability: false),
+            new Config(emitter: $emitter, sendFeedback: false),
             container: $container,
         );
         $builder->addTool(
@@ -276,7 +381,7 @@ final class OfficialAdapterTest extends TestCase
     {
         $injectedEmitter = new AdapterEmitter();
         [$injectedRegistry, $injectedHandler] = self::adapter(
-            new Config(emitter: $injectedEmitter, requestCapability: false),
+            new Config(emitter: $injectedEmitter, sendFeedback: false),
         );
         $injectedSeen = null;
         $injectedReference = $injectedRegistry->registerTool(
@@ -303,7 +408,7 @@ final class OfficialAdapterTest extends TestCase
         [$ownedRegistry, $ownedHandler] = self::adapter(
             new Config(
                 emitter: $ownedEmitter,
-                requestCapability: false,
+                sendFeedback: false,
                 logger: new NullLogger(),
             ),
         );
@@ -325,7 +430,7 @@ final class OfficialAdapterTest extends TestCase
 
         $scrubEmitter = new AdapterEmitter();
         [$scrubRegistry, $scrubHandler] = self::adapter(
-            new Config(captureTelemetry: false, emitter: $scrubEmitter, requestCapability: false),
+            new Config(captureTelemetry: false, emitter: $scrubEmitter, sendFeedback: false),
         );
         $scrubSeen = null;
         $scrubSchema = self::schema(['safe' => ['type' => 'boolean']], ['safe'], false);
@@ -360,7 +465,7 @@ final class OfficialAdapterTest extends TestCase
     public function testNoArgumentToolUsesStrictClientCompatibleSchemas(): void
     {
         [$registry] = self::adapter(
-            new Config(emitter: new AdapterEmitter(), requestCapability: false),
+            new Config(emitter: new AdapterEmitter(), sendFeedback: false),
         );
         $reference = $registry->registerTool(
             self::tool('no_arguments'),
@@ -377,7 +482,7 @@ final class OfficialAdapterTest extends TestCase
     {
         $emitter = new AdapterEmitter();
         [$registry, $handler] = self::adapter(
-            new Config(emitter: $emitter, requestCapability: false),
+            new Config(emitter: $emitter, sendFeedback: false),
         );
         $errorResult = CallToolResult::error([new TextContent('upstream failed')]);
         $errorReference = $registry->registerTool(
@@ -405,11 +510,48 @@ final class OfficialAdapterTest extends TestCase
         }
     }
 
-    public function testRequestCapabilityDefaultCollisionYieldsAndExplicitCollisionFails(): void
+    public function testDefaultSendFeedbackYieldsToACustomerTool(): void
     {
         $emitter = new AdapterEmitter();
         $builder = Server::builder();
         $instrumentation = Analytics::instrument($builder, new Config(emitter: $emitter));
+        $builder->addTool(
+            static fn (string $capability): string => 'customer ' . $capability,
+            name: 'send_feedback',
+            description: 'Customer tool',
+            inputSchema: self::schema(['capability' => ['type' => 'string']], ['capability']),
+        );
+        $builder->build();
+        $public = $instrumentation->registry()->getTools()->references['send_feedback'];
+        self::assertInstanceOf(Tool::class, $public);
+        self::assertSame('Customer tool', $public->description);
+        self::assertArrayHasKey('telemetry', $public->inputSchema['properties']);
+        $reference = $instrumentation->registry()->getTool('send_feedback');
+        self::assertFalse($instrumentation->registry()->isCapabilityRequest($reference));
+        self::assertSame('customer x', $instrumentation->referenceHandler()->handle($reference, [
+            'capability' => 'x',
+            '_session' => self::session(),
+        ]));
+        self::assertArrayNotHasKey('capability_request', $emitter->event('tool_call')['metadata']);
+    }
+
+    public function testDefaultSendFeedbackYieldsToALaterCustomerRegistration(): void
+    {
+        [$registry] = self::adapter(new Config(emitter: new AdapterEmitter()));
+        $registry->registerSendFeedback();
+        self::assertTrue($registry->isCapabilityRequest($registry->getTool('send_feedback')));
+
+        $registry->registerTool(self::tool('send_feedback'), static fn (): string => 'customer');
+        self::assertFalse($registry->isCapabilityRequest($registry->getTool('send_feedback')));
+        $public = $registry->getTools()->references['send_feedback'];
+        self::assertInstanceOf(Tool::class, $public);
+        self::assertSame('Description', $public->description);
+    }
+
+    public function testCustomerToolNamedRequestCapabilityIsOrdinary(): void
+    {
+        $builder = Server::builder();
+        $instrumentation = Analytics::instrument($builder, new Config(emitter: new AdapterEmitter(), sendFeedback: true));
         $builder->addTool(
             static fn (string $capability): string => 'customer ' . $capability,
             name: 'request_capability',
@@ -417,34 +559,75 @@ final class OfficialAdapterTest extends TestCase
             inputSchema: self::schema(['capability' => ['type' => 'string']], ['capability']),
         );
         $builder->build();
-        $public = $instrumentation->registry()->getTools()->references['request_capability'];
-        self::assertInstanceOf(Tool::class, $public);
-        self::assertSame('Customer tool', \strtok((string) $public->description, "\n"));
-        self::assertFalse(
-            $instrumentation->registry()->isCapabilityRequest(
-                $instrumentation->registry()->getTool('request_capability'),
-            ),
-        );
+        $registry = $instrumentation->registry();
+        self::assertFalse($registry->isCapabilityRequest($registry->getTool('request_capability')));
+        self::assertTrue($registry->isCapabilityRequest($registry->getTool('send_feedback')));
+    }
 
-        $explicitBuilder = Server::builder();
+    public function testExplicitSendFeedbackCollisionFails(): void
+    {
+        $builder = Server::builder();
         Analytics::instrument(
-            $explicitBuilder,
-            new Config(emitter: new AdapterEmitter(), requestCapability: true),
+            $builder,
+            new Config(emitter: new AdapterEmitter(), sendFeedback: true),
         );
-        $explicitBuilder->addTool(
+        $builder->addTool(
             static fn (): string => 'customer',
-            name: 'request_capability',
+            name: 'send_feedback',
             inputSchema: self::schema(),
         );
         $this->expectException(\LogicException::class);
-        $explicitBuilder->build();
+        $this->expectExceptionMessage('Tool name "send_feedback" is reserved while sendFeedback is explicitly enabled.');
+        $builder->build();
     }
 
-    public function testRequestCapabilityHonorsPreexistingAndDiscoveredCustomerTools(): void
+    public function testExplicitSendFeedbackCollisionFailsOnEveryLookup(): void
+    {
+        [$registry] = self::adapter(new Config(emitter: new AdapterEmitter(), sendFeedback: true));
+        $registry->registerTool(self::tool('send_feedback'), static fn (): string => 'customer');
+        $registry->registerSendFeedback();
+        for ($attempt = 0; $attempt < 2; ++$attempt) {
+            try {
+                $registry->getTools();
+                self::fail('An explicit send_feedback collision must fail on every lookup.');
+            } catch (\LogicException $exception) {
+                self::assertStringContainsString('send_feedback', $exception->getMessage());
+            }
+        }
+    }
+
+    public function testDeprecatedExplicitRequestCapabilityCollisionFails(): void
+    {
+        $builder = Server::builder();
+        Analytics::instrument(
+            $builder,
+            new Config(emitter: new AdapterEmitter(), requestCapability: true),
+        );
+        $builder->addTool(
+            static fn (): string => 'customer',
+            name: 'send_feedback',
+            inputSchema: self::schema(),
+        );
+        $this->expectException(\LogicException::class);
+        $builder->build();
+    }
+
+    public function testExplicitSendFeedbackRejectsALaterCustomerRegistration(): void
+    {
+        [$registry] = self::adapter(new Config(emitter: new AdapterEmitter(), sendFeedback: true));
+        $registry->registerSendFeedback();
+        self::assertTrue($registry->isCapabilityRequest($registry->getTool('send_feedback')));
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('send_feedback');
+        $registry->registerTool(self::tool('send_feedback'), static fn (): string => 'customer');
+    }
+
+    public function testDefaultSendFeedbackYieldsToPreexistingAndDiscoveredCustomerTools(): void
     {
         $preexisting = new Registry();
         $preexisting->registerTool(
-            self::tool('request_capability'),
+            self::tool('send_feedback'),
             static fn (string $capability): string => 'preexisting: ' . $capability,
         );
         $preexistingBuilder = Server::builder();
@@ -454,12 +637,13 @@ final class OfficialAdapterTest extends TestCase
             registry: $preexisting,
         );
         $preexistingBuilder->build();
-        $preexistingReference = $preexistingInstrumentation->registry()->getTool('request_capability');
+        $preexistingReference = $preexistingInstrumentation->registry()->getTool('send_feedback');
         self::assertFalse($preexistingInstrumentation->registry()->isCapabilityRequest($preexistingReference));
         $preexistingPublic = $preexistingInstrumentation->registry()
             ->getTools()
-            ->references['request_capability'];
+            ->references['send_feedback'];
         self::assertInstanceOf(Tool::class, $preexistingPublic);
+        self::assertSame('Description', $preexistingPublic->description);
         self::assertArrayHasKey(
             'telemetry',
             $preexistingPublic->inputSchema['properties'],
@@ -476,26 +660,21 @@ final class OfficialAdapterTest extends TestCase
             namePatterns: ['DiscoveredCapabilityTool.php'],
         );
         $discoveredBuilder->build();
-        $discoveredReference = $discoveredInstrumentation->registry()->getTool('request_capability');
+        $discoveredReference = $discoveredInstrumentation->registry()->getTool('send_feedback');
         self::assertFalse($discoveredInstrumentation->registry()->isCapabilityRequest($discoveredReference));
-        self::assertSame(
-            'Discovered customer capability',
-            \strtok(
-                (string) $discoveredInstrumentation->registry()
-                    ->getTools()
-                    ->references['request_capability']
-                    ->description,
-                "\n",
-            ),
-        );
+        $discoveredPublic = $discoveredInstrumentation->registry()
+            ->getTools()
+            ->references['send_feedback'];
+        self::assertInstanceOf(Tool::class, $discoveredPublic);
+        self::assertSame('Discovered customer feedback tool', $discoveredPublic->description);
     }
 
-    public function testExplicitRequestCapabilityCollisionWithDiscoveryFails(): void
+    public function testExplicitSendFeedbackCollisionWithDiscoveryFails(): void
     {
         $builder = Server::builder();
         Analytics::instrument(
             $builder,
-            new Config(emitter: new AdapterEmitter(), requestCapability: true),
+            new Config(emitter: new AdapterEmitter(), sendFeedback: true),
         );
         $builder->setDiscovery(
             basePath: \dirname(__DIR__),
@@ -507,12 +686,12 @@ final class OfficialAdapterTest extends TestCase
         $builder->build();
     }
 
-    public function testInternalRequestCapabilityIsUndecoratedAndMarked(): void
+    public function testSendFeedbackIsUndecoratedAndCallsAreMarked(): void
     {
         $emitter = new AdapterEmitter();
         $builder = Server::builder();
         $instrumentation = Analytics::instrument($builder, new Config(emitter: $emitter));
-        $reference = $instrumentation->registry()->getTool('request_capability');
+        $reference = $instrumentation->registry()->getTool('send_feedback');
         self::assertArrayNotHasKey('telemetry', $reference->tool->inputSchema['properties']);
         self::assertTrue($instrumentation->registry()->isCapabilityRequest($reference));
 
@@ -522,7 +701,10 @@ final class OfficialAdapterTest extends TestCase
         ]);
         self::assertInstanceOf(CallToolResult::class, $result);
         self::assertFalse($result->isError);
-        self::assertTrue($emitter->event('tool_call')['metadata']['capability_request']);
+        self::assertSame('Capability request acknowledged.', $result->content[0]->text ?? null);
+        $event = $emitter->event('tool_call');
+        self::assertSame('send_feedback', $event['metadata']['tool_name']);
+        self::assertTrue($event['metadata']['capability_request']);
 
         $unicodeResult = $instrumentation->referenceHandler()->handle($reference, [
             'capability' => \str_repeat('🙂', 1_000),

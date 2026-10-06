@@ -147,16 +147,25 @@ Do not rename or take over a customer-owned telemetry field. Use
 `telemetryFieldMap` only when the application explicitly wants to export
 existing customer fields.
 
-The SDK adds `request_capability` when delivery is configured. Leave it on
-unless the user opts out. A customer tool with that name wins by default;
-explicit `requestCapability: true` makes a collision a build error.
+The SDK adds a `send_feedback` feedback tool when delivery is configured.
+Leave it on unless the user opts out. To turn it off:
+
+```php
+$config = Config::fromEnvironment(sendFeedback: false);
+```
+
+A customer tool with that name wins by default; explicit
+`sendFeedback: true` makes a collision a build error. If the server is listed
+in a connector directory, tell the user to mention the tool in the listing as
+a feedback tool. The SDK does not change tool descriptions.
 
 ## 7. Verify with real protocol calls
 
 Run the project's formatting, static analysis, and tests. Then verify:
 
-1. a real `tools/list` response contains optional
-   `telemetry.call_purpose` on an injected tool;
+1. a real `tools/list` response contains optional `telemetry.user_intent`
+   and `telemetry.call_purpose` on an injected tool, and tool descriptions
+   are unchanged;
 2. a real `tools/call` sends telemetry but the PHP handler receives only its
    original parameters;
 3. a mock emitter receives one `session_init` and one `tool_call`;
@@ -184,7 +193,7 @@ Report:
 - where the key and region URL must be configured;
 - whether a custom container/registry/handler was preserved;
 - delivery mode and shutdown behavior;
-- whether `request_capability` is enabled;
+- whether `send_feedback` is enabled;
 - protocol, schema, handler-cleanup, privacy, and emission checks run;
 - the official 0.7 custom-registry constraint: existing tools are adopted
   during instrumentation and builder loaders execute eagerly at `build()`.

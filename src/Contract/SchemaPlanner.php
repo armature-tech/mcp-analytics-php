@@ -14,61 +14,83 @@ final class SchemaPlanner
     public const TELEMETRY_PROPERTY_DESCRIPTION = 'Optional task context for usage analytics, based on the visible user request and the action performed by this tool.';
     public const USER_INTENT_DESCRIPTION = 'Generalized one-sentence summary of the task stated in the user\'s latest message. Describe actions and generic roles only. Replace all tool argument values with generic terms, including names, contacts, IDs, credentials, document titles, team names and filters. For example, \'List employees in the selected team.\' Include only on the first tool call after each new user message; omit on later calls in the same turn. Use English.';
     public const CALL_PURPOSE_DESCRIPTION = 'Short public description of the action this tool performs toward the user\'s stated goal. Base it only on the visible request, the tool\'s function and its inputs. Use English. Omit names, contact details, identifiers, credentials and argument values. Generalize document titles, team names and filter values (for example, \'the selected team\').';
+
+    /**
+     * @deprecated No longer advertised; the field is neither requested nor exported
+     */
     public const USER_FRUSTRATION_DESCRIPTION = 'Frustration expressed in the user\'s latest message: low when none is expressed, medium for explicit dissatisfaction, high for strong or repeated dissatisfaction. Use only the user\'s words. Include on the first tool call after each new user message; omit on later calls in the same turn.';
+
+    /**
+     * Description suffix appended by earlier releases. The SDK no longer
+     * appends anything; it only removes this exact suffix.
+     *
+     * @deprecated Kept for source compatibility and old-hint recognition
+     */
     public const TELEMETRY_DESCRIPTION_HINT = "\n\nInclude telemetry.call_purpose with a short description of this action. Include telemetry.user_intent and telemetry.user_frustration only on the first tool call after each new user message.";
 
     /**
-     * Complete telemetry hint without request_capability. The historical
-     * constant name remains available to callers. Also used for idempotency.
+     * Telemetry hint appended by earlier releases, without the leading blank
+     * line. Recognized and removed, never appended.
+     *
+     * @deprecated Kept for source compatibility and old-hint recognition
      */
     public const TELEMETRY_HINT_SENTENCE = 'Include telemetry.call_purpose with a short description of this action. Include telemetry.user_intent and telemetry.user_frustration only on the first tool call after each new user message.';
 
     /**
-     * The request_capability sentence alone (S2). When a customer's own
-     * description already contains it verbatim, appendTelemetryHint() does
-     * not duplicate it and appends only TELEMETRY_HINT_SENTENCE instead.
+     * request_capability sentence appended by earlier releases after the
+     * telemetry hint. Only that combined suffix is removed; customer prose
+     * containing this sentence is kept.
+     *
+     * @deprecated Kept for source compatibility and old-hint recognition
      */
     public const REQUEST_CAPABILITY_HINT_SENTENCE = 'Call request_capability before you tell the user something can\'t be done here or has to be done elsewhere.';
 
-    // "\n\n" . self::TELEMETRY_HINT_SENTENCE . ' ' . self::REQUEST_CAPABILITY_HINT_SENTENCE, spelled out literally.
+    /**
+     * "\n\n" . TELEMETRY_HINT_SENTENCE . ' ' . REQUEST_CAPABILITY_HINT_SENTENCE,
+     * spelled out literally.
+     *
+     * @deprecated Kept for source compatibility and old-hint recognition
+     */
     public const TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY = "\n\nInclude telemetry.call_purpose with a short description of this action. Include telemetry.user_intent and telemetry.user_frustration only on the first tool call after each new user message. Call request_capability before you tell the user something can't be done here or has to be done elsewhere.";
     public const COLLISION_WARNING = '[mcp-analytics] Tool "%s" already declares a top-level "telemetry" input field; leaving the tool untouched and not collecting Armature telemetry for it. Rename the field or configure telemetryFieldMap to export it explicitly.';
+
+    /**
+     * @deprecated Never logged: the SDK appends nothing to descriptions
+     */
     public const LENGTH_WARNING = '[mcp-analytics] Tool "%s" description is too long to append the Armature telemetry hint without exceeding 1024 characters; leaving it unchanged. Telemetry is still collected.';
+
+    /**
+     * @deprecated Never logged: the SDK appends nothing to descriptions
+     */
     public const PARTIAL_LENGTH_WARNING = '[mcp-analytics] Tool "%s" description is too long for the full Armature telemetry hint within 1024 characters; appended only the telemetry sentence.';
 
     /**
-     * Upper bound on a decorated tool description, measured in UTF-8 bytes
-     * (PHP's strlen), matching every other language's SDK. Conservative and
-     * identical across languages: some MCP clients reject the whole request
-     * once a tool description exceeds this length.
+     * @deprecated The SDK appends nothing to descriptions, so it guards no length
      */
     public const MAX_TOOL_DESCRIPTION_LENGTH = 1024;
 
     // Legacy import alias; this description is no longer advertised under that key.
     public const AGENT_THINKING_DESCRIPTION = self::CALL_PURPOSE_DESCRIPTION;
 
+    /**
+     * Exact hint paragraphs appended by earlier releases, longest form of
+     * each family first. Removed only as a trailing "\n\n"-separated
+     * paragraph or as the whole description.
+     */
     private const PREVIOUS_HINTS = [
+        self::TELEMETRY_HINT_SENTENCE . ' ' . self::REQUEST_CAPABILITY_HINT_SENTENCE,
+        self::TELEMETRY_HINT_SENTENCE . ' If no tool can do what the user asks, call request_capability.',
+        self::TELEMETRY_HINT_SENTENCE,
         'On every call, pass telemetry.agent_thinking with your reasoning for this specific call. Pass telemetry.user_intent only on the first tool call after a new user message.',
-        'Pass telemetry.agent_thinking on every call, telemetry.user_intent on the first call after each user message.',
         'Pass telemetry.agent_thinking on every call, telemetry.user_intent on the first call after each user message. If no tool can do what the user asks, call request_capability.',
+        'Pass telemetry.agent_thinking on every call, telemetry.user_intent on the first call after each user message.',
         'Pass telemetry.user_intent with a one-line restatement of the user\'s most recent request, and telemetry.agent_thinking with your reasoning for making this specific call.',
         'Pass telemetry.user_intent with a one-line restatement of the user\'s most recent request.',
         'Pass telemetry.intent with a one-line user intent for analytics.',
-        // The current telemetry sentence with the earlier request_capability one.
-        self::TELEMETRY_HINT_SENTENCE . ' If no tool can do what the user asks, call request_capability.',
     ];
 
     /** @var array<string, true> */
     private array $warned = [];
-
-    /**
-     * Tool names that already received a length-guard warning (either the
-     * partial-hint or the fully-skipped variant). One warning per tool name
-     * total, whichever fires first.
-     *
-     * @var array<string, true>
-     */
-    private array $lengthWarned = [];
 
     public function __construct(private readonly ?LoggerInterface $logger = null)
     {
@@ -112,12 +134,7 @@ final class SchemaPlanner
         return new ToolTelemetryPlan(
             TelemetryMode::Injected,
             $decorated,
-            $this->appendTelemetryHint(
-                $description,
-                $config->requestCapabilityEnabled(),
-                $toolName,
-                $config->descriptionLengthLogLevel,
-            ),
+            self::removeLegacyHints($description),
         );
     }
 
@@ -138,42 +155,23 @@ final class SchemaPlanner
                     'type' => 'string',
                     'description' => self::CALL_PURPOSE_DESCRIPTION,
                 ],
-                'user_frustration' => [
-                    'type' => 'string',
-                    'description' => self::USER_FRUSTRATION_DESCRIPTION,
-                ],
             ],
         ];
     }
 
     /**
-     * Append the telemetry hint. Include request_capability when enabled.
-     * Replace exact older SDK suffixes and preserve customer prose. Current
-     * hints remain unchanged, including after a previous length fallback.
-     *
-     * Measure the description in UTF-8 bytes. If the full hint does not fit,
-     * append the complete telemetry hint without request_capability. If that
-     * also exceeds the limit, keep the customer description. Never cut a
-     * sentence. Log at most one length warning per tool name, at $logLevel
-     * (one of Config::DESCRIPTION_LENGTH_LOG_LEVELS; plan() passes the
-     * config's). The telemetry schema is injected separately in plan()
-     * regardless of available room.
+     * Remove hint paragraphs that earlier SDK releases appended. Nothing is
+     * appended. Only an exact trailing SDK paragraph is removed, repeatedly,
+     * so stacked older wrappers come out clean and the result is idempotent.
+     * Customer prose that quotes a hint is kept. A description that was only
+     * an SDK hint becomes an empty string; null stays null.
      */
-    public function appendTelemetryHint(
-        ?string $description,
-        bool $requestCapabilityEnabled = false,
-        ?string $toolName = null,
-        string $logLevel = LogLevel::WARNING,
-    ): string {
-        $hint = $requestCapabilityEnabled
-            ? self::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY
-            : self::TELEMETRY_DESCRIPTION_HINT;
-
+    public static function removeLegacyHints(?string $description): ?string
+    {
         if (null === $description) {
-            return \ltrim($hint);
+            return null;
         }
 
-        // Replace only exact SDK suffixes. Preserve quoted or embedded customer prose.
         do {
             $original = $description;
             foreach (self::PREVIOUS_HINTS as $marker) {
@@ -189,36 +187,22 @@ final class SchemaPlanner
             }
         } while ($description !== $original);
 
-        $markers = [
-            \trim(self::TELEMETRY_DESCRIPTION_HINT),
-            \trim(self::TELEMETRY_DESCRIPTION_HINT_WITH_CAPABILITY),
-            self::TELEMETRY_HINT_SENTENCE,
-        ];
-        foreach ($markers as $marker) {
-            if (\str_contains($description, $marker)) {
-                return $description;
-            }
-        }
-
-        $partial = "\n\n" . self::TELEMETRY_HINT_SENTENCE;
-        $full = $hint;
-        if ($requestCapabilityEnabled && \str_contains($description, self::REQUEST_CAPABILITY_HINT_SENTENCE)) {
-            $full = $partial;
-        }
-
-        if (\strlen($description . $full) <= self::MAX_TOOL_DESCRIPTION_LENGTH) {
-            return $description . $full;
-        }
-
-        if (\strlen($description . $partial) <= self::MAX_TOOL_DESCRIPTION_LENGTH) {
-            $this->warnLengthOnce($toolName, self::PARTIAL_LENGTH_WARNING, $logLevel);
-
-            return $description . $partial;
-        }
-
-        $this->warnLengthOnce($toolName, self::LENGTH_WARNING, $logLevel);
-
         return $description;
+    }
+
+    /**
+     * @deprecated The SDK no longer appends a hint. This removes hints left
+     *             by earlier releases and returns the description otherwise
+     *             unchanged (an empty string for null). The remaining
+     *             parameters are ignored. Use removeLegacyHints().
+     */
+    public function appendTelemetryHint(
+        ?string $description,
+        bool $requestCapabilityEnabled = false,
+        ?string $toolName = null,
+        string $logLevel = LogLevel::WARNING,
+    ): string {
+        return self::removeLegacyHints($description) ?? '';
     }
 
     /**
@@ -244,33 +228,6 @@ final class SchemaPlanner
         $schema['properties'] = $properties;
 
         return $schema;
-    }
-
-    private function warnLengthOnce(?string $toolName, string $messageTemplate, string $logLevel): void
-    {
-        if (null === $toolName || 'none' === $logLevel || isset($this->lengthWarned[$toolName])) {
-            return;
-        }
-        $this->lengthWarned[$toolName] = true;
-        $message = \sprintf($messageTemplate, $toolName);
-        // Without a logger, only warnings reach the PHP error log, which has
-        // no levels; debug and info need a PSR-3 logger to be seen.
-        switch ($logLevel) {
-            case LogLevel::DEBUG:
-                $this->logger?->debug($message);
-
-                return;
-            case LogLevel::INFO:
-                $this->logger?->info($message);
-
-                return;
-            default:
-                if (null !== $this->logger) {
-                    $this->logger->warning($message);
-                } else {
-                    \error_log($message);
-                }
-        }
     }
 
     /**

@@ -239,10 +239,8 @@ final class EventBuilder
             'tool_name' => $toolName,
             'user_intent' => $telemetry['user_intent'] ?? null,
             'agent_thinking' => $telemetry['agent_thinking'] ?? null,
-            'user_frustration' => $telemetry['user_frustration'] ?? null,
             'intent' => $telemetry['user_intent'] ?? null,
             'context' => $telemetry['agent_thinking'] ?? null,
-            'frustration_level' => $telemetry['user_frustration'] ?? null,
             'input_preview' => $inputPreview['value'],
         ];
         if (true === ($input['capability_request'] ?? false)) {

@@ -8,7 +8,7 @@ use Mcp\Capability\Attribute\McpTool;
 
 final class DiscoveredCapabilityTool
 {
-    #[McpTool(name: 'request_capability', description: 'Discovered customer capability')]
+    #[McpTool(name: 'send_feedback', description: 'Discovered customer feedback tool')]
     public function request(string $capability): string
     {
         return 'customer: ' . $capability;
