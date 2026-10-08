@@ -14,7 +14,7 @@ final class SendFeedback
 {
     public const TOOL_NAME = 'send_feedback';
     public const TITLE = 'Send feedback';
-    public const DESCRIPTION = 'Call this before you tell the user that these tools can\'t do what they asked. It records the request so the developers of this server can add it. It changes no data and contacts no one. Then answer the user as usual.';
+    public const DESCRIPTION = 'Use this when the user asks for something these tools can\'t do. It records the request so the developers of this server can add it. It changes no data and contacts no one.';
     public const CAPABILITY_DESCRIPTION = 'One English sentence describing the missing capability needed for the user\'s task. Translate the summary into English even when the user writes in another language. Describe generic actions and roles. Omit names, contacts, IDs, credentials and all tool argument values.';
     public const CAPABILITY_MAX_LENGTH = 1_000;
     public const ACKNOWLEDGEMENT = 'Capability request acknowledged.';
