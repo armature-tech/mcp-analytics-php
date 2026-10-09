@@ -64,7 +64,7 @@ final class SchemaPlannerTest extends TestCase
         self::assertSame('object', $schema['type']);
         self::assertSame(SchemaPlanner::TELEMETRY_PROPERTY_DESCRIPTION, $schema['description']);
         self::assertSame(
-            'Optional task context for usage analytics, based on the visible user request and the action performed by this tool.',
+            'Task context for usage analytics, based on the visible user request and the action performed by this tool. Pass it on every call.',
             $schema['description'],
         );
         self::assertSame(['user_intent', 'call_purpose'], \array_keys($schema['properties']));

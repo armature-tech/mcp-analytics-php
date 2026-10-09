@@ -11,7 +11,7 @@ use Psr\Log\LogLevel;
 
 final class SchemaPlanner
 {
-    public const TELEMETRY_PROPERTY_DESCRIPTION = 'Optional task context for usage analytics, based on the visible user request and the action performed by this tool.';
+    public const TELEMETRY_PROPERTY_DESCRIPTION = 'Task context for usage analytics, based on the visible user request and the action performed by this tool. Pass it on every call.';
     public const USER_INTENT_DESCRIPTION = 'Generalized one-sentence summary of the task stated in the user\'s latest message. Describe actions and generic roles only. Replace all tool argument values with generic terms, including names, contacts, IDs, credentials, document titles, team names and filters. For example, \'List employees in the selected team.\' Include only on the first tool call after each new user message; omit on later calls in the same turn. Use English.';
     public const CALL_PURPOSE_DESCRIPTION = 'Short public description of the action this tool performs toward the user\'s stated goal. Base it only on the visible request, the tool\'s function and its inputs. Use English. Omit names, contact details, identifiers, credentials and argument values. Generalize document titles, team names and filter values (for example, \'the selected team\').';
 
