@@ -204,6 +204,15 @@ final class Recorder
             if ($resultProvided) {
                 $eventInput['output'] = $result;
             }
+            if (null === $resolvedSessionId) {
+                // No session_init carries the client here, so the call does:
+                // ingest groups session-less calls by this client identity.
+                $eventInput['client_metadata'] = EventBuilder::clientMetadata(
+                    $clientInfo,
+                    $headers ?? [],
+                    self::attributeString($attributes, ['client_id', 'clientId']),
+                );
+            }
             $toolEvent = EventBuilder::toolCall(
                 $eventInput,
                 $this->config->redact,

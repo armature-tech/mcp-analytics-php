@@ -8,10 +8,17 @@ use Armature\McpAnalytics\Recorder;
 use Mcp\Capability\Registry\ElementReference;
 use Mcp\Capability\Registry\ReferenceHandlerInterface;
 use Mcp\Capability\Registry\ToolReference;
+use Mcp\Schema\Implementation;
 use Mcp\Server\Session\SessionInterface;
 
 final class InstrumentedReferenceHandler implements ReferenceHandlerInterface
 {
+    /**
+     * mcp/sdk 0.8+ stores the per-request metadata of a 2026-07-28 request
+     * under this session key. Named as a string so 0.7 still type-checks.
+     */
+    private const REQUEST_META = 'Mcp\\Server\\Stateless\\RequestMeta';
+
     public function __construct(
         private readonly ReferenceHandlerInterface $inner,
         private readonly InstrumentedRegistry $registry,
@@ -29,9 +36,12 @@ final class InstrumentedReferenceHandler implements ReferenceHandlerInterface
         $session = ($arguments['_session'] ?? null) instanceof SessionInterface
             ? $arguments['_session']
             : null;
-        $sessionId = null === $session ? null : $session->getId()->toRfc4122();
+        $requestMeta = self::requestMeta($session);
+        // A 2026-07-28 request runs in a throwaway session with a fresh id per
+        // call. Send no session id there, so ingest groups the calls itself.
+        $sessionId = null === $session || null !== $requestMeta ? null : $session->getId()->toRfc4122();
         $requestContext = $this->requestContextStore->current($sessionId);
-        $clientInfo = self::clientInfo($session);
+        $clientInfo = self::clientInfo($session, $requestMeta);
         $protocolVersion = self::header($requestContext['headers'] ?? [], 'Mcp-Protocol-Version');
         if (null !== $protocolVersion) {
             $clientInfo ??= [];
@@ -61,13 +71,21 @@ final class InstrumentedReferenceHandler implements ReferenceHandlerInterface
     /**
      * @return array<string, mixed>|null
      */
-    private static function clientInfo(?SessionInterface $session): ?array
+    private static function clientInfo(?SessionInterface $session, ?object $requestMeta): ?array
     {
         if (null === $session) {
             return null;
         }
         $raw = $session->get('client_info');
         $info = \is_array($raw) ? $raw : [];
+        if (null !== $requestMeta) {
+            // The 2026-07-28 revision sends clientInfo on each request, not
+            // once at initialize. It is optional there.
+            $requestClient = \get_object_vars($requestMeta)['clientInfo'] ?? null;
+            if ($requestClient instanceof Implementation) {
+                $info = $requestClient->jsonSerialize();
+            }
+        }
         $capabilities = $session->get('client_capabilities');
         $protocolVersion = $session->get('protocol_version');
         if (\is_array($capabilities)) {
@@ -78,6 +96,13 @@ final class InstrumentedReferenceHandler implements ReferenceHandlerInterface
         }
 
         return [] === $info ? null : $info;
+    }
+
+    private static function requestMeta(?SessionInterface $session): ?object
+    {
+        $meta = $session?->get(self::REQUEST_META);
+
+        return \is_object($meta) && \is_a($meta, self::REQUEST_META) ? $meta : null;
     }
 
     /**

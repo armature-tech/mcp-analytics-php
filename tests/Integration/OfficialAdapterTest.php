@@ -59,11 +59,11 @@ final class OfficialAdapterTest extends TestCase
         $builder->build();
         $public = $instrumentation->registry()->getTools()->references['weather'];
         self::assertInstanceOf(Tool::class, $public);
-        self::assertArrayHasKey('telemetry', $public->inputSchema['properties']);
-        self::assertSame(SchemaPlanner::telemetryJsonSchema(), $public->inputSchema['properties']['telemetry']);
+        self::assertArrayHasKey('telemetry', (array) $public->inputSchema['properties']);
+        self::assertSame(SchemaPlanner::telemetryJsonSchema(), ((array) $public->inputSchema['properties'])['telemetry']);
         self::assertSame(
             ['user_intent', 'call_purpose'],
-            \array_keys($public->inputSchema['properties']['telemetry']['properties']),
+            \array_keys(((array) $public->inputSchema['properties'])['telemetry']['properties']),
         );
         self::assertSame('Weather lookup', $public->description);
         self::assertSame(
@@ -124,7 +124,7 @@ final class OfficialAdapterTest extends TestCase
                 $tool = $tools[$name] ?? null;
                 self::assertInstanceOf(Tool::class, $tool, $label . ': ' . $name);
                 self::assertSame($description, $tool->description, $label . ': ' . $name);
-                self::assertArrayHasKey('telemetry', $tool->inputSchema['properties'], $label . ': ' . $name);
+                self::assertArrayHasKey('telemetry', (array) $tool->inputSchema['properties'], $label . ': ' . $name);
             }
             foreach ($tools as $name => $tool) {
                 self::assertInstanceOf(Tool::class, $tool);
@@ -158,7 +158,7 @@ final class OfficialAdapterTest extends TestCase
         self::assertInstanceOf(Tool::class, $public);
         self::assertNull($public->description);
         self::assertArrayNotHasKey('description', \json_decode((string) \json_encode($public), true));
-        self::assertArrayHasKey('telemetry', $public->inputSchema['properties']);
+        self::assertArrayHasKey('telemetry', (array) $public->inputSchema['properties']);
     }
 
     public function testOldSdkHintSuffixesAreRemovedFromRegisteredDescriptions(): void
@@ -314,7 +314,7 @@ final class OfficialAdapterTest extends TestCase
             self::assertArrayHasKey($name, $tools);
             $tool = $tools[$name];
             self::assertInstanceOf(Tool::class, $tool);
-            self::assertArrayHasKey('telemetry', $tool->inputSchema['properties']);
+            self::assertArrayHasKey('telemetry', (array) $tool->inputSchema['properties']);
         }
         $publicExplicit = $tools['explicit'];
         self::assertInstanceOf(Tool::class, $publicExplicit);
@@ -448,8 +448,8 @@ final class OfficialAdapterTest extends TestCase
         $public = $scrubRegistry->getTools()->references['scrub'];
         self::assertInstanceOf(Tool::class, $public);
         self::assertSame($scrubSchema, $public->inputSchema);
-        self::assertArrayNotHasKey('telemetry', $public->inputSchema['properties']);
-        self::assertArrayHasKey('telemetry', $scrubRegistry->getTool('scrub')->tool->inputSchema['properties']);
+        self::assertArrayNotHasKey('telemetry', (array) $public->inputSchema['properties']);
+        self::assertArrayHasKey('telemetry', (array) $scrubRegistry->getTool('scrub')->tool->inputSchema['properties']);
         $scrubHandler->handle($scrubReference, [
             'safe' => true,
             'telemetry' => ['user_intent' => 'cached private value'],
@@ -525,7 +525,7 @@ final class OfficialAdapterTest extends TestCase
         $public = $instrumentation->registry()->getTools()->references['send_feedback'];
         self::assertInstanceOf(Tool::class, $public);
         self::assertSame('Customer tool', $public->description);
-        self::assertArrayHasKey('telemetry', $public->inputSchema['properties']);
+        self::assertArrayHasKey('telemetry', (array) $public->inputSchema['properties']);
         $reference = $instrumentation->registry()->getTool('send_feedback');
         self::assertFalse($instrumentation->registry()->isCapabilityRequest($reference));
         self::assertSame('customer x', $instrumentation->referenceHandler()->handle($reference, [
@@ -646,7 +646,7 @@ final class OfficialAdapterTest extends TestCase
         self::assertSame('Description', $preexistingPublic->description);
         self::assertArrayHasKey(
             'telemetry',
-            $preexistingPublic->inputSchema['properties'],
+            (array) $preexistingPublic->inputSchema['properties'],
         );
 
         $discoveredBuilder = Server::builder();
@@ -692,7 +692,7 @@ final class OfficialAdapterTest extends TestCase
         $builder = Server::builder();
         $instrumentation = Analytics::instrument($builder, new Config(emitter: $emitter));
         $reference = $instrumentation->registry()->getTool('send_feedback');
-        self::assertArrayNotHasKey('telemetry', $reference->tool->inputSchema['properties']);
+        self::assertArrayNotHasKey('telemetry', (array) $reference->tool->inputSchema['properties']);
         self::assertTrue($instrumentation->registry()->isCapabilityRequest($reference));
 
         $result = $instrumentation->referenceHandler()->handle($reference, [

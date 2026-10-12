@@ -55,7 +55,31 @@ final class RequestContextStore
 
         return $this->fiberContexts[$fiber]
             ?? (null === $sessionId ? null : ($this->sessionContexts[$sessionId] ?? null))
-            ?? $this->mainContext;
+            ?? $this->mainContext
+            ?? (null === $sessionId ? $this->onlyStatelessFiberContext() : null);
+    }
+
+    /**
+     * A 2026-07-28 request has no session id to key on. When the middleware
+     * itself runs in a Fiber, the SDK's child Fiber can still use the context
+     * if it is the only request in flight and that request has no session id
+     * either. Otherwise no context is safer than the wrong one.
+     *
+     * @return array{
+     *   headers: array<string, string>,
+     *   attributes: array<string, mixed>
+     * }|null
+     */
+    private function onlyStatelessFiberContext(): ?array
+    {
+        if (1 !== \count($this->fiberContexts)) {
+            return null;
+        }
+        foreach ($this->fiberContexts as $context) {
+            return null === self::sessionId($context['headers']) ? $context : null;
+        }
+
+        return null;
     }
 
     /**

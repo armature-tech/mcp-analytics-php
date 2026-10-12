@@ -93,14 +93,6 @@ final class EventBuilder
         ?string $authClientId = null,
         ?string $workflowRunId = null,
     ): array {
-        $capabilities = $clientInfo['capabilities'] ?? null;
-        if (!\is_array($capabilities) || \strlen(Json::preview($capabilities)) > self::MAX_CAPABILITIES_BYTES) {
-            $capabilities = null;
-        }
-        $clientName = self::trimmed($clientInfo['name'] ?? null)
-            ?? self::trimmed($authClientId)
-            ?? self::trimmed(SessionIds::header($headers, 'x-mcp-client'));
-
         return [
             ...self::workflowStamp($workflowRunId),
             ...self::base(
@@ -113,14 +105,44 @@ final class EventBuilder
                 durationMs: 0,
                 ok: true,
                 error: null,
-                metadata: [
-                    'client_name' => $clientName,
-                    'client_version' => self::trimmed($clientInfo['version'] ?? null),
-                    'protocol_version' => self::trimmed($clientInfo['protocolVersion'] ?? null),
-                    'capabilities' => $capabilities,
-                    'user_agent' => SessionIds::header($headers, 'user-agent'),
-                ],
+                metadata: self::clientMetadata($clientInfo, $headers, $authClientId),
             ),
+        ];
+    }
+
+    /**
+     * The client identity keys ingest reads from session_init, and from a
+     * tool_call that carries no session id (it groups those calls by client).
+     *
+     * @param array<string, mixed>|null          $clientInfo
+     * @param array<string, string|list<string>> $headers
+     *
+     * @return array{
+     *   client_name: ?string,
+     *   client_version: ?string,
+     *   protocol_version: ?string,
+     *   capabilities: ?array<mixed>,
+     *   user_agent: ?string
+     * }
+     */
+    public static function clientMetadata(
+        ?array $clientInfo = null,
+        array $headers = [],
+        ?string $authClientId = null,
+    ): array {
+        $capabilities = $clientInfo['capabilities'] ?? null;
+        if (!\is_array($capabilities) || \strlen(Json::preview($capabilities)) > self::MAX_CAPABILITIES_BYTES) {
+            $capabilities = null;
+        }
+
+        return [
+            'client_name' => self::trimmed($clientInfo['name'] ?? null)
+                ?? self::trimmed($authClientId)
+                ?? self::trimmed(SessionIds::header($headers, 'x-mcp-client')),
+            'client_version' => self::trimmed($clientInfo['version'] ?? null),
+            'protocol_version' => self::trimmed($clientInfo['protocolVersion'] ?? null),
+            'capabilities' => $capabilities,
+            'user_agent' => SessionIds::header($headers, 'user-agent'),
         ];
     }
 
@@ -245,6 +267,10 @@ final class EventBuilder
         ];
         if (true === ($input['capability_request'] ?? false)) {
             $metadata['capability_request'] = true;
+        }
+        if (isset($input['client_metadata']) && \is_array($input['client_metadata'])) {
+            // Contract keys above win over client identity keys.
+            $metadata += $input['client_metadata'];
         }
 
         return [

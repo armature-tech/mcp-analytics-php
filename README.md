@@ -10,7 +10,8 @@ and where calls fail—without building an observability pipeline.
 [Agent install](SKILL.md)
 
 This package integrates with the official experimental PHP MCP SDK,
-`mcp/sdk` 0.7.x, on PHP 8.1 and newer.
+`mcp/sdk` 0.7.x and 0.8.x, on PHP 8.1 and newer. With 0.8, tool calls on the
+stateless 2026-07-28 protocol revision are recorded too.
 
 ## Install
 
@@ -100,7 +101,7 @@ $analytics = Analytics::instrument(
 );
 ```
 
-`mcp/sdk` 0.7 accepts closures, class/method pairs, and invokable class strings
+`mcp/sdk` accepts closures, class/method pairs, and invokable class strings
 (not invokable object instances). Adapt a bare named function or invokable
 object with `Closure::fromCallable(...)` before passing it to `addTool()`.
 
@@ -319,7 +320,7 @@ $analytics = Analytics::instrument(
 );
 ```
 
-Supplying a custom registry makes `mcp/sdk` 0.7 load builder loaders eagerly
+Supplying a custom registry makes `mcp/sdk` load builder loaders eagerly
 during `build()`. Armature also reads and re-registers tools already present
 in a supplied registry during `Analytics::instrument()` so they cannot bypass
 the wrapper. Those operations may therefore change lazy loading to eager
@@ -378,10 +379,10 @@ machine-readable output.
   retried. HTTP 429, HTTP 5xx, timeouts, and connection failures receive one
   retry.
 - **Discovery runs earlier than before:** a supplied custom registry forces
-  official `mcp/sdk` 0.7 loaders to finalize during `build()`. Fix the loader
+  official `mcp/sdk` loaders to finalize during `build()`. Fix the loader
   failure itself; the wrapper deliberately does not hide it.
 - **Composer rejects the dependency:** this release supports PHP 8.1+ and
-  `mcp/sdk >=0.7.0 <0.8.0`. Upgrade or constrain the application explicitly;
+  `mcp/sdk` `^0.7 || ^0.8`. Upgrade or constrain the application explicitly;
   do not bypass Composer's platform or version checks.
 - **Streamable HTTP cannot find a response factory:** keep the application's
   existing PSR-17 implementation or install the Nyholm packages shown above,

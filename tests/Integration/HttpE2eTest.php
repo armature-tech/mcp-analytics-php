@@ -200,4 +200,21 @@ final class HttpEmitter implements EmitterInterface
 
         TestCase::fail('No ' . $kind . ' event was emitted.');
     }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function events(string $kind): array
+    {
+        $events = [];
+        foreach ($this->batches as $batch) {
+            foreach ($batch['events'] as $event) {
+                if ($kind === ($event['kind'] ?? null)) {
+                    $events[] = $event;
+                }
+            }
+        }
+
+        return $events;
+    }
 }
