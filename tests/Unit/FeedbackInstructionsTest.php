@@ -14,6 +14,7 @@ use Nyholm\Psr7\Stream;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
@@ -143,6 +144,19 @@ final class FeedbackInstructionsTest extends TestCase
             $result = self::middleware($gate)->process($request, self::handler($response));
             self::assertSame($response, $result, $case);
         }
+    }
+
+    public function testMiddlewareSendsTheHandshakeWhenNoStreamFactoryWorks(): void
+    {
+        $factory = $this->createStub(StreamFactoryInterface::class);
+        $factory->method('createStream')->willThrowException(new \RuntimeException('no factory'));
+        $middleware = new AnalyticsHttpMiddleware(new RequestContextStore(), static fn (): bool => true, $factory);
+        $response = new Response(200, ['Content-Type' => 'application/json'], self::INITIALIZE_RESULT);
+
+        $result = $middleware->process(self::post(self::initialize('claude-code')), self::handler($response));
+
+        self::assertSame($response, $result);
+        self::assertSame(self::INITIALIZE_RESULT, (string) $result->getBody());
     }
 
     private static function initialize(string $client): string

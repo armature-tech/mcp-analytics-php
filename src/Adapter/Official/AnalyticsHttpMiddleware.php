@@ -123,8 +123,14 @@ final class AnalyticsHttpMiddleware implements MiddlewareInterface
             return $response;
         }
 
-        $this->streamFactory ??= Psr17FactoryDiscovery::findStreamFactory();
-        $response = $response->withBody($this->streamFactory->createStream($rewritten));
+        try {
+            $this->streamFactory ??= Psr17FactoryDiscovery::findStreamFactory();
+            $response = $response->withBody($this->streamFactory->createStream($rewritten));
+        } catch (\Throwable) {
+            // No PSR-17 factory php-http/discovery can find: the client still
+            // gets the handshake, without the sentence.
+            return $response;
+        }
 
         return $response->hasHeader('Content-Length')
             ? $response->withHeader('Content-Length', (string) \strlen($rewritten))
