@@ -52,6 +52,7 @@ final class Analytics
             $instrumentedRegistry,
             $instrumentedHandler,
             $requestContextStore,
+            $resolvedConfig->feedbackInstructions,
         );
     }
 }

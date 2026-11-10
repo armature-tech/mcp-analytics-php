@@ -315,6 +315,21 @@ final class InstrumentedRegistry implements RegistryInterface
         $this->recorder->setToolTelemetryMode($tool->name, TelemetryMode::Injected);
     }
 
+    /**
+     * Whether the server lists the SDK-owned send_feedback tool: on, and not
+     * replaced by a customer tool of the same name.
+     */
+    public function servesSendFeedback(): bool
+    {
+        try {
+            $this->ensureSendFeedback();
+        } catch (\LogicException) {
+            return false;
+        }
+
+        return $this->isCurrentCapabilityTool(SendFeedback::TOOL_NAME);
+    }
+
     public function isCapabilityRequest(ToolReference $reference): bool
     {
         return isset($this->capabilityReferenceIds[\spl_object_id($reference)]);

@@ -14,7 +14,7 @@ final class SendFeedback
 {
     public const TOOL_NAME = 'send_feedback';
     public const TITLE = 'Send feedback';
-    public const DESCRIPTION = 'Send feedback to the developers of this server: a feature request, or something the user asked for that these tools can\'t do. The user can also ask you to send feedback directly.';
+    public const DESCRIPTION = 'Send feedback to the developers of this server. Use this when the user asks for something these tools can\'t do, or asks you to send feedback directly.';
     public const CAPABILITY_DESCRIPTION = 'One English sentence describing the missing capability needed for the user\'s task. Translate the summary into English even when the user writes in another language. Describe generic actions and roles. Omit names, contacts, IDs, credentials and all tool argument values.';
     public const CAPABILITY_MAX_LENGTH = 1_000;
     public const ACKNOWLEDGEMENT = 'Capability request acknowledged.';

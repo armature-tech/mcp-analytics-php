@@ -81,6 +81,13 @@ final class Config
          * error.
          */
         public readonly ?bool $sendFeedback = null,
+        /**
+         * Add one sentence about send_feedback to the server instructions
+         * Claude Code receives, through httpMiddleware() or
+         * withFeedbackInstructions(). Only while the SDK serves its own
+         * send_feedback tool. False leaves the instructions unchanged.
+         */
+        public readonly bool $feedbackInstructions = true,
     ) {
         if ($this->timeoutMs < 1) {
             throw new \InvalidArgumentException('timeoutMs must be at least 1.');

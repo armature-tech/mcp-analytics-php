@@ -233,7 +233,7 @@ final class OfficialAdapterTest extends TestCase
         self::assertSame(SendFeedback::TOOL_NAME, $feedbackTool->name);
         self::assertNull($feedbackTool->title);
         self::assertSame(
-            'Send feedback to the developers of this server: a feature request, or something the user asked for that these tools can\'t do. The user can also ask you to send feedback directly.',
+            'Send feedback to the developers of this server. Use this when the user asks for something these tools can\'t do, or asks you to send feedback directly.',
             $feedbackTool->description,
         );
         self::assertSame(

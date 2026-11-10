@@ -3,7 +3,8 @@ name: install-armature-mcp-analytics-php
 description: >
   Install and verify the armature/mcp-analytics Composer package in an
   official PHP MCP SDK server. Use when adding Armature analytics to a PHP MCP
-  server that uses mcp/sdk 0.7.x, including stdio and Streamable HTTP servers.
+  server that uses mcp/sdk 0.7.x or 0.8.x, including stdio and Streamable HTTP
+  servers and symfony/mcp-bundle.
 ---
 
 # Install Armature MCP Analytics in a PHP MCP server
@@ -21,7 +22,7 @@ Search for:
 - an existing PSR-11 container, custom `RegistryInterface`, or custom
   `ReferenceHandlerInterface`.
 
-This release supports the official `mcp/sdk` 0.7.x package. Stop and explain
+This release supports the official `mcp/sdk` 0.7.x and 0.8.x packages. Stop and explain
 the incompatibility if the project uses another PHP MCP implementation. Do not
 patch framework internals.
 
@@ -34,7 +35,7 @@ composer require armature/mcp-analytics
 ```
 
 Preserve the repository's lock-file policy. The package supports PHP 8.1+ and
-pins the official MCP SDK below 0.8.
+`mcp/sdk` `^0.7 || ^0.8`.
 
 ## 3. Configure the correct Armature region
 
@@ -159,6 +160,13 @@ A customer tool with that name wins by default; explicit
 in a connector directory, tell the user to mention the tool in the listing as
 a feedback tool. The SDK does not change tool descriptions.
 
+Over HTTP, `httpMiddleware()` also adds one sentence about `send_feedback` to
+the server instructions that Claude Code (clientInfo `claude-code`) receives,
+and to no other client. With `symfony/mcp-bundle`, which takes no extra
+PSR-15 middleware, add the response listener from the README's "Claude Code
+instructions" section; it calls `$analytics->withFeedbackInstructions()`. Leave
+it on unless the user opts out with `feedbackInstructions: false`.
+
 ## 7. Verify with real protocol calls
 
 Run the project's formatting, static analysis, and tests. Then verify:
@@ -174,7 +182,11 @@ Run the project's formatting, static analysis, and tests. Then verify:
 6. HTTP calls preserve distinct `Mcp-Session-Id`, client info, authenticated
    principal, and workflow marker values;
 7. no Authorization value, binary payload, or known secret appears in emitted
-   JSON.
+   JSON;
+8. over HTTP, an `initialize` (or `server/discover`) call with clientInfo name
+   `claude-code` returns server instructions ending with the `send_feedback`
+   sentence, and the same call with another client name returns them
+   unchanged.
 
 For a running HTTP server also run:
 
@@ -193,7 +205,8 @@ Report:
 - where the key and region URL must be configured;
 - whether a custom container/registry/handler was preserved;
 - delivery mode and shutdown behavior;
-- whether `send_feedback` is enabled;
+- whether `send_feedback` is enabled, and how Claude Code gets its instructions
+  sentence (middleware, listener, or off);
 - protocol, schema, handler-cleanup, privacy, and emission checks run;
 - the official 0.7 custom-registry constraint: existing tools are adopted
   during instrumentation and builder loaders execute eagerly at `build()`.
