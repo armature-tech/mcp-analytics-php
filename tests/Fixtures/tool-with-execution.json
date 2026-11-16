@@ -1,0 +1,6 @@
+{
+  "name": "export",
+  "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}},
+  "description": "Export a report",
+  "execution": {"taskSupport": "optional"}
+}

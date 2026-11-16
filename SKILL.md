@@ -3,7 +3,7 @@ name: install-armature-mcp-analytics-php
 description: >
   Install and verify the armature/mcp-analytics Composer package in an
   official PHP MCP SDK server. Use when adding Armature analytics to a PHP MCP
-  server that uses mcp/sdk 0.7.x or 0.8.x, including stdio and Streamable HTTP
+  server that uses mcp/sdk 0.7.x, 0.8.x or 0.9.x, including stdio and Streamable HTTP
   servers and symfony/mcp-bundle.
 ---
 
@@ -22,7 +22,7 @@ Search for:
 - an existing PSR-11 container, custom `RegistryInterface`, or custom
   `ReferenceHandlerInterface`.
 
-This release supports the official `mcp/sdk` 0.7.x and 0.8.x packages. Stop and explain
+This release supports the official `mcp/sdk` 0.7.x, 0.8.x and 0.9.x packages. Stop and explain
 the incompatibility if the project uses another PHP MCP implementation. Do not
 patch framework internals.
 
@@ -35,7 +35,7 @@ composer require armature/mcp-analytics
 ```
 
 Preserve the repository's lock-file policy. The package supports PHP 8.1+ and
-`mcp/sdk` `^0.7 || ^0.8`.
+`mcp/sdk` `^0.7 || ^0.8 || ^0.9`.
 
 ## 3. Configure the correct Armature region
 

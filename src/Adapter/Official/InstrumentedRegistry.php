@@ -141,6 +141,16 @@ final class InstrumentedRegistry implements RegistryInterface
         $this->inner->unregisterPrompt($name);
     }
 
+    /**
+     * Declared by mcp/sdk 0.9. On 0.7 and 0.8 the wrapped registry has no such method, and nothing calls this one.
+     */
+    public function publishesListChanges(): bool
+    {
+        $publishes = [$this->inner, 'publishesListChanges'];
+
+        return \is_callable($publishes) && true === $publishes();
+    }
+
     public function hasTool(string $name): bool
     {
         return $this->inner->hasTool($name);
@@ -174,9 +184,7 @@ final class InstrumentedRegistry implements RegistryInterface
         $page = $this->inner->getTools($limit, $cursor);
         $tools = [];
         foreach ($page->references as $key => $item) {
-            $tools[$key] = $item instanceof Tool
-                ? ($this->publicTools[$item->name] ?? $item)
-                : $item;
+            $tools[$key] = $this->publicTools[$item->name] ?? $item;
         }
 
         return new Page($tools, $page->nextCursor);
@@ -347,11 +355,11 @@ final class InstrumentedRegistry implements RegistryInterface
     private function adoptExistingTools(): void
     {
         foreach ($this->inner->getTools()->references as $item) {
-            if (!$item instanceof Tool || isset($this->publicTools[$item->name])) {
+            if (isset($this->publicTools[$item->name])) {
                 continue;
             }
             $reference = $this->inner->getTool($item->name);
-            $this->registerTool($item, $reference->handler);
+            $this->registerTool($reference->tool, $reference->handler);
         }
     }
 
@@ -363,16 +371,23 @@ final class InstrumentedRegistry implements RegistryInterface
         array $inputSchema,
         ?string $description,
     ): Tool {
-        return new Tool(
-            name: $tool->name,
-            title: $tool->title,
-            inputSchema: self::toolInputSchema($inputSchema),
-            description: $description,
-            annotations: $tool->annotations,
-            icons: $tool->icons,
-            meta: $tool->meta,
-            outputSchema: $tool->outputSchema,
-        );
+        $arguments = [
+            'name' => $tool->name,
+            'title' => $tool->title,
+            'inputSchema' => self::toolInputSchema($inputSchema),
+            'description' => $description,
+            'annotations' => $tool->annotations,
+            'icons' => $tool->icons,
+            'meta' => $tool->meta,
+            'outputSchema' => $tool->outputSchema,
+        ];
+        // mcp/sdk 0.9 added `execution` (task support). 0.7 and 0.8 have no such parameter.
+        $properties = \get_object_vars($tool);
+        if (\array_key_exists('execution', $properties)) {
+            $arguments['execution'] = $properties['execution'];
+        }
+
+        return new Tool(...$arguments);
     }
 
     /**

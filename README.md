@@ -10,8 +10,8 @@ and where calls fail—without building an observability pipeline.
 [Agent install](SKILL.md)
 
 This package integrates with the official experimental PHP MCP SDK,
-`mcp/sdk` 0.7.x and 0.8.x, on PHP 8.1 and newer. With 0.8, tool calls on the
-stateless 2026-07-28 protocol revision are recorded too.
+`mcp/sdk` 0.7.x, 0.8.x and 0.9.x, on PHP 8.1 and newer. From 0.8, tool calls on
+the stateless 2026-07-28 protocol revision are recorded too.
 
 ## Install
 
@@ -456,7 +456,7 @@ machine-readable output.
   official `mcp/sdk` loaders to finalize during `build()`. Fix the loader
   failure itself; the wrapper deliberately does not hide it.
 - **Composer rejects the dependency:** this release supports PHP 8.1+ and
-  `mcp/sdk` `^0.7 || ^0.8`. Upgrade or constrain the application explicitly;
+  `mcp/sdk` `^0.7 || ^0.8 || ^0.9`. Upgrade or constrain the application explicitly;
   do not bypass Composer's platform or version checks.
 - **Streamable HTTP cannot find a response factory:** keep the application's
   existing PSR-17 implementation or install the Nyholm packages shown above,

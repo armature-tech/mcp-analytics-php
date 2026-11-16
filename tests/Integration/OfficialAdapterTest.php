@@ -14,11 +14,14 @@ use Armature\McpAnalytics\Contract\SchemaPlanner;
 use Armature\McpAnalytics\Contract\SendFeedback;
 use Armature\McpAnalytics\Delivery\EmitterInterface;
 use Armature\McpAnalytics\Recorder;
+use Composer\InstalledVersions;
 use Mcp\Capability\Registry;
 use Mcp\Capability\Registry\Loader\LoaderInterface;
 use Mcp\Capability\Registry\ReferenceHandler;
+use Mcp\Capability\RegistryInterface;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\Icon;
+use Mcp\Schema\Page;
 use Mcp\Schema\Request\CallToolRequest;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\Tool;
@@ -59,11 +62,11 @@ final class OfficialAdapterTest extends TestCase
         $builder->build();
         $public = $instrumentation->registry()->getTools()->references['weather'];
         self::assertInstanceOf(Tool::class, $public);
-        self::assertArrayHasKey('telemetry', (array) $public->inputSchema['properties']);
-        self::assertSame(SchemaPlanner::telemetryJsonSchema(), ((array) $public->inputSchema['properties'])['telemetry']);
+        self::assertArrayHasKey('telemetry', self::properties($public));
+        self::assertSame(SchemaPlanner::telemetryJsonSchema(), self::properties($public)['telemetry']);
         self::assertSame(
             ['user_intent', 'call_purpose'],
-            \array_keys(((array) $public->inputSchema['properties'])['telemetry']['properties']),
+            \array_keys(self::properties($public)['telemetry']['properties']),
         );
         self::assertSame('Weather lookup', $public->description);
         self::assertSame(
@@ -124,7 +127,7 @@ final class OfficialAdapterTest extends TestCase
                 $tool = $tools[$name] ?? null;
                 self::assertInstanceOf(Tool::class, $tool, $label . ': ' . $name);
                 self::assertSame($description, $tool->description, $label . ': ' . $name);
-                self::assertArrayHasKey('telemetry', (array) $tool->inputSchema['properties'], $label . ': ' . $name);
+                self::assertArrayHasKey('telemetry', self::properties($tool), $label . ': ' . $name);
             }
             foreach ($tools as $name => $tool) {
                 self::assertInstanceOf(Tool::class, $tool);
@@ -158,7 +161,46 @@ final class OfficialAdapterTest extends TestCase
         self::assertInstanceOf(Tool::class, $public);
         self::assertNull($public->description);
         self::assertArrayNotHasKey('description', \json_decode((string) \json_encode($public), true));
-        self::assertArrayHasKey('telemetry', (array) $public->inputSchema['properties']);
+        self::assertArrayHasKey('telemetry', self::properties($public));
+    }
+
+    public function testDecoratedToolKeepsItsExecution(): void
+    {
+        if (self::mcpSdkBelow('0.9')) {
+            self::markTestSkipped('mcp/sdk 0.7 and 0.8 have no tool execution.');
+        }
+        [$registry] = self::adapter(new Config(emitter: new AdapterEmitter(), sendFeedback: true));
+        $registry->registerTool(
+            Tool::fromArray(\json_decode(
+                (string) \file_get_contents(__DIR__ . '/../Fixtures/tool-with-execution.json'),
+                true,
+                512,
+                \JSON_THROW_ON_ERROR,
+            )),
+            static fn (string $id): string => $id,
+        );
+
+        $public = \json_decode((string) \json_encode($registry->getTools()->references['export']), true);
+
+        self::assertIsArray($public);
+        self::assertSame(['taskSupport' => 'optional'], $public['execution'] ?? null);
+        self::assertArrayHasKey('telemetry', $public['inputSchema']['properties']);
+    }
+
+    public function testListChangesAreAnsweredByTheWrappedRegistry(): void
+    {
+        $config = new Config(emitter: new AdapterEmitter(), sendFeedback: true);
+        [$registry] = self::adapter($config);
+        self::assertFalse($registry->publishesListChanges());
+
+        if (self::mcpSdkBelow('0.9')) {
+            self::markTestSkipped('mcp/sdk 0.7 and 0.8 do not ask whether list changes are published.');
+        }
+        $inner = $this->createStub(RegistryInterface::class);
+        $inner->method('getTools')->willReturn(new Page([], null));
+        $inner->method('publishesListChanges')->willReturn(true);
+
+        self::assertTrue((new InstrumentedRegistry($inner, new Recorder($config), $config))->publishesListChanges());
     }
 
     public function testOldSdkHintSuffixesAreRemovedFromRegisteredDescriptions(): void
@@ -314,7 +356,7 @@ final class OfficialAdapterTest extends TestCase
             self::assertArrayHasKey($name, $tools);
             $tool = $tools[$name];
             self::assertInstanceOf(Tool::class, $tool);
-            self::assertArrayHasKey('telemetry', (array) $tool->inputSchema['properties']);
+            self::assertArrayHasKey('telemetry', self::properties($tool));
         }
         $publicExplicit = $tools['explicit'];
         self::assertInstanceOf(Tool::class, $publicExplicit);
@@ -448,8 +490,8 @@ final class OfficialAdapterTest extends TestCase
         $public = $scrubRegistry->getTools()->references['scrub'];
         self::assertInstanceOf(Tool::class, $public);
         self::assertSame($scrubSchema, $public->inputSchema);
-        self::assertArrayNotHasKey('telemetry', (array) $public->inputSchema['properties']);
-        self::assertArrayHasKey('telemetry', (array) $scrubRegistry->getTool('scrub')->tool->inputSchema['properties']);
+        self::assertArrayNotHasKey('telemetry', self::properties($public));
+        self::assertArrayHasKey('telemetry', self::properties($scrubRegistry->getTool('scrub')->tool));
         $scrubHandler->handle($scrubReference, [
             'safe' => true,
             'telemetry' => ['user_intent' => 'cached private value'],
@@ -474,8 +516,8 @@ final class OfficialAdapterTest extends TestCase
         $public = $registry->getTools()->references['no_arguments'];
 
         self::assertInstanceOf(Tool::class, $public);
-        self::assertSame([], $public->inputSchema['required']);
-        self::assertSame([], $reference->tool->inputSchema['required']);
+        self::assertSame([], self::required($public));
+        self::assertSame([], self::required($reference->tool));
     }
 
     public function testOfficialErrorResultAndExceptionIdentityArePreserved(): void
@@ -525,7 +567,7 @@ final class OfficialAdapterTest extends TestCase
         $public = $instrumentation->registry()->getTools()->references['send_feedback'];
         self::assertInstanceOf(Tool::class, $public);
         self::assertSame('Customer tool', $public->description);
-        self::assertArrayHasKey('telemetry', (array) $public->inputSchema['properties']);
+        self::assertArrayHasKey('telemetry', self::properties($public));
         $reference = $instrumentation->registry()->getTool('send_feedback');
         self::assertFalse($instrumentation->registry()->isCapabilityRequest($reference));
         self::assertSame('customer x', $instrumentation->referenceHandler()->handle($reference, [
@@ -646,7 +688,7 @@ final class OfficialAdapterTest extends TestCase
         self::assertSame('Description', $preexistingPublic->description);
         self::assertArrayHasKey(
             'telemetry',
-            (array) $preexistingPublic->inputSchema['properties'],
+            self::properties($preexistingPublic),
         );
 
         $discoveredBuilder = Server::builder();
@@ -692,7 +734,7 @@ final class OfficialAdapterTest extends TestCase
         $builder = Server::builder();
         $instrumentation = Analytics::instrument($builder, new Config(emitter: $emitter));
         $reference = $instrumentation->registry()->getTool('send_feedback');
-        self::assertArrayNotHasKey('telemetry', (array) $reference->tool->inputSchema['properties']);
+        self::assertArrayNotHasKey('telemetry', self::properties($reference->tool));
         self::assertTrue($instrumentation->registry()->isCapabilityRequest($reference));
 
         $result = $instrumentation->referenceHandler()->handle($reference, [
@@ -769,6 +811,34 @@ final class OfficialAdapterTest extends TestCase
         self::assertSame('Bearer private', $handler->context['headers']['Authorization']);
         self::assertSame('principal', $handler->context['attributes']['principal_id']);
         self::assertNull($store->current());
+    }
+
+    private static function mcpSdkBelow(string $version): bool
+    {
+        return \version_compare((string) InstalledVersions::getVersion('mcp/sdk'), $version, '<');
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    private static function properties(Tool $tool): array
+    {
+        return (array) (self::member($tool->inputSchema, 'properties') ?? []);
+    }
+
+    private static function required(Tool $tool): mixed
+    {
+        return self::member($tool->inputSchema, 'required');
+    }
+
+    /**
+     * mcp/sdk 0.9 types `properties` and `required` as optional members of a tool's input schema, 0.7 and 0.8 as present.
+     *
+     * @param array<string, mixed> $schema
+     */
+    private static function member(array $schema, string $key): mixed
+    {
+        return $schema[$key] ?? null;
     }
 
     /**
@@ -910,7 +980,7 @@ final class ExplicitTestHandler implements ToolHandlerInterface
 
 final class CustomTestLoader implements LoaderInterface
 {
-    public function load(\Mcp\Capability\RegistryInterface $registry): void
+    public function load(RegistryInterface $registry): void
     {
         $registry->registerTool(
             new Tool(

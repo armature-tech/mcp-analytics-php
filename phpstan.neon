@@ -6,3 +6,17 @@ parameters:
     - tests
   tmpDir: .phpstan-cache
   treatPhpDocTypesAsCertain: true
+  ignoreErrors:
+    # The SDK supports mcp/sdk 0.7, 0.8 and 0.9, and CI analyses against more than one of them.
+    # 0.9 declares RegistryInterface::publishesListChanges(), so the check for it is always true there.
+    -
+      identifier: function.alreadyNarrowedType
+      message: "#^Call to function is_callable\\(\\) with array\\{Mcp\\\\Capability\\\\RegistryInterface, 'publishesListChanges'\\} will always evaluate to true\\.$#"
+      path: src/Adapter/Official/InstrumentedRegistry.php
+      reportUnmatched: false
+    # 0.7 and 0.8 have no Tool::$execution, so the argument is only passed when the property exists.
+    -
+      identifier: argument.unknown
+      message: "#^Unknown parameter \\$execution in call to Mcp\\\\Schema\\\\Tool constructor\\.$#"
+      path: src/Adapter/Official/InstrumentedRegistry.php
+      reportUnmatched: false

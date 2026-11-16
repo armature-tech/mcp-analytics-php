@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Support `mcp/sdk` 0.9 (the constraint is now `^0.7 || ^0.8 || ^0.9`), so applications can upgrade to `symfony/mcp-bundle` 0.15 and 1.0.0-BETA1. The instrumented registry forwards 0.9's `publishesListChanges()` to the registry it wraps, so the server announces `listChanged` as it would without the SDK, and tools keep their `execution` (task support) when the SDK adds `telemetry` to their input schema. Nothing changes on 0.7 and 0.8. `mcp/sdk` 0.10 is not supported yet.
+
 - When no PSR-17 stream factory can be found to add the `send_feedback` sentence, `httpMiddleware()` sends Claude Code's `initialize` or `server/discover` response unchanged. With v0.1.15 the request failed and Claude Code could not connect.
 
 - `send_feedback` has a new description: "Send feedback to the developers of this server. Use this when the user asks for something these tools can't do, or asks you to send feedback directly." With the previous wording, a production server saw a feedback call in under 1% of sessions on every client, against 13% of ChatGPT and Codex sessions with the wording before it. In the send_feedback eval, OpenAI's Responses API connector (the `openai-mcp` client of ChatGPT and Codex) calls it on 100% of requests the tools cannot do, up from 45%, and on none of the requests they can. ChatGPT's app review passed the new wording on a published app with no findings and no runtime warning.
